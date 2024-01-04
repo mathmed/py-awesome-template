@@ -1,0 +1,17 @@
+version: "3.5"
+services:
+  py-awesome-template:
+    container_name: py-awesome-template
+    build:
+      context: ../
+      dockerfile: ./docker/Dockerfile
+    ports:
+      # Change on the .env file on the root of the project
+      - ${APP_PORT}:80
+    volumes:
+      - ../:/home/app
+    networks:
+      - app_network
+networks:
+  app_network:
+    driver: bridge
