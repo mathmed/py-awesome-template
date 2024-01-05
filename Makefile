@@ -16,4 +16,4 @@ check-code:
 
 # Format code to PEP8
 format-code:
-	docker exec -it py-awesome-template sh -c "cd /home/app && poetry run autopep8 --exclude="main.py" .; poetry run isort ."
+	docker exec -it -e UID=$(id -u) -e GID=$(id -g) py-awesome-template sh -c "cd /home/app && poetry run autopep8 --exclude="main.py" .; poetry run isort . && chown -R $(id -u):$(id -g) ."
