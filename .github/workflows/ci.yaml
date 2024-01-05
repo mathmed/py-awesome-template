@@ -35,7 +35,7 @@ jobs:
         run: poetry run isort --check-only ./app
 
       - name: Test Coverage with Pytest
-        run: ENV='test' pytest --cov-config=.coveragerc --cov-report=xml --doctest-modules --cov=. app/
+        run: ENV='test' poetry run pytest --cov-config=.coveragerc --cov-report=xml --doctest-modules --cov=. app/
 
       - name: Archive code coverage results
         uses: actions/upload-artifact@v3
