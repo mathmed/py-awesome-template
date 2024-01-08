@@ -11,72 +11,85 @@
 
 # py-awesome-template
 
-Base template to start new awesome Python3.x projects. This template includes:
+Kickstart your Python Python 3.x project with Clean Architecture. This robust template embraces the principles of Clean Architecture. This template not only provides a well-organized folder structure but also comes pre-configured with essential tools and settings, including code styling, continuous integration, Docker support, and SonarCloud integration.
 
-- Folder structure based on Clean Architecture with some initial examples
-- Code styles pre-configuration: pylint, autopep8, flake8 and isort
-- SonarCloud base configuration for code analysis
-- CI (Github Actions) base configurantion with: code styles, unit tests and sonar scan jobs
-- Docker configuration to run project locally
+## Features
+
+- Clean Architecture Structure: The project template follows [Uncle Bob's Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html) principles. The clear separation of layers ensures maintainability, testability, and scalability.
+
+- Code Styles Pre-configuration: We've set up pylint, autopep8, flake8, and isort to help you maintain consistent and clean code.
+
+- SonarCloud Integration: Leverage the power of SonarCloud for in-depth code analysis. Keep track of technical debt, code quality, reliability, and more.
+
+- Continuous Integration (GitHub Actions): A robust CI pipeline is ready to check code styles, run unit tests, and perform SonarCloud scans with each push.
+
+- Docker Support: Easily run your project locally using Docker. No hassle with dependencies; everything is containerized.
 
 ## Setup project
 
-### Docker
+### Getting Started
 
-To run the project locally, you need to get Docker. You can install Docker [following this tutorial](https://docs.docker.com/engine/install/).
+To run the project locally, ensure you have Docker installed. If not, follow the installation [guide here](https://docs.docker.com/engine/install/).
 
 ### Sonar Config
 
-To analysis the code on each git push, you need to configure the SonarCloud (its free for personal use with public repositories). On [SonarCloud](https://sonarcloud.io/), create a new project using Github Actions. Take the **SONAR_TOKEN** and create a secret with the same name on your Github repository. Then, fill the `sonar-project.properties` file with your `sonar.projectKey` and `sonar.organization`; both are shown on the SonarCloud configuration page.
+For code analysis on each push, configure SonarCloud. Create a new project using GitHub Actions on SonarCloud. Grab the `SONAR_TOKEN` and create a secret with the same name in your GitHub repository. Update the `sonar-project.properties` file with your `sonar.projectKey` and `sonar.organization` from the SonarCloud configuration page.
+
+> [!NOTE]
+> SonarCloud is free for personal use in public repositories.
 
 ### Installing Dependencies
 
-To install a new dependency on project use the `pyproject.toml` file. Use the `[tool.poetry.dependencies]` to add production dependencies and `[tool.poetry.group.test.dependencies]` to add test and development dependencies.
+Manage project dependencies in the pyproject.toml file. Use `tool.poetry.dependencies` for production dependencies and `tool.poetry.group.test.dependencies` for test and development dependencies.
 
 ### Available commands
 
-On root folder, you can run some commands using **make**.
+Use the following commands in the root folder with **make**:
 
-| Command          | Description                                                                                                                                            |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| make dev         | Runs the project locally. It is necessary to have Docker installed for it to work.                                                                     |
-| make dev-build   | Runs the project locally performing the build. Useful for when a new dependency is installed. It is necessary to have Docker installed for it to work. |
-| make test        | Run unit tests. The docker container must be running to work.                                                                                          |
-| make check-code  | Verify the code sintax and styles (PEP8). The docker container must be running to work.                                                                |
-| make format-code | Format the code styles (PEP8). The docker container must be running to work.                                                                           |
+| Command          | Description                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------- |
+| make dev         | Run the project locally. Docker must be installed.                                                      |
+| make dev-build   | Run the project locally with build. Useful after installing new dependencies. Docker must be installed. |
+| make test        | Run unit tests. Ensure the Docker container is running.                                                 |
+| make check-code  | Verify code syntax and styles (PEP8). Docker container must be running.                                 |
+| make format-code | Format code styles (PEP8). Docker container must be running.                                            |
 
 ### Config files
 
-| File                     | Description                                                                                         |
-| ------------------------ | --------------------------------------------------------------------------------------------------- |
-| .coveragerc              | Defines files that will be analyzed and ignored in test coverage reports.                           |
-| .env.example             | Defines the enviroment variables. Need to create a .env file on root project from the .env.example. |
-| .flake8                  | Defines flake8 code styles.                                                                         |
-| Makefile                 | Create shortcuts for commands using make.                                                           |
-| pyproject.toml           | Set project details, add dependencies, define autopep8, pylint and isort configurations.            |
-| sonar-project.properties | Set the SonarCloud configs.                                                                         |
-| pytest.ini               | Set pytest configs.                                                                                 |
-| github/workflows/ci.yaml | Github Actions CI configuration file.                                                               |
+| File                     | Description                                                                                  |
+| ------------------------ | -------------------------------------------------------------------------------------------- |
+| .coveragerc              | Define files for analysis and ignored in test coverage reports.                              |
+| .env.example             | Define environment variables. Create a .env file in the project root based on .env.example.  |
+| .flake8                  | Define flake8 code styles.                                                                   |
+| Makefile                 | Create shortcuts for commands using make.                                                    |
+| pyproject.toml           | Set project details, add dependencies, and define autopep8, pylint and isort configurations. |
+| sonar-project.properties | Set the SonarCloud configurations.                                                           |
+| pytest.ini               | Set pytest configurations.                                                                   |
+| github/workflows/ci.yaml | Github Actions CI configuration file.                                                        |
 
-## Architecture and folder structure
+## Architecture and Folder Structure
 
 ![Alt text](docs/arc.png "Clean Architeture")
 
 This template uses an architecture and folder structuring based on uncle bob's clean architecture.
-layers (folders) have the following responsibilities:
+The layers (folders) have the following responsibilities:
 
 ### Main
 
-Basic settings and starting point. Here the "app" is created.
+Basic settings and starting point where the "app" is created.
 
 ### Domain
 
-The most important layer of the project. Use cases, models and entities, services (common codes) and contracts are written in this layer. Contracts are interfaces that abstract some external library or service, which will be written in the infrastructure layer. The domain layer should never access other layers directly, only through interfaces using dependency injection.
+The core layer housing use cases, models, entities, services (common codes), and contracts. Contracts are interfaces that abstract external libraries or services, implemented in the infrastructure layer. The domain layer should never directly access other layers but interact through interfaces using dependency injection.
 
 ### Presentation
 
-Layer where the means to access the application's use cases and expose the application to the external world are created, through HTTP/REST, for example. Here frameworks can be used for this, such as FastAPI or Flask. In the presentation layer, the factory pattern is also used, which is used to instantiate all the classes necessary to execute a use case.
+The layer for accessing the application's use cases and exposing the application to the external world, often through HTTP/REST (e.g., FastAPI or Flask). The presentation layer utilizes the factory pattern to instantiate classes needed to execute a use case.
 
 ### Infra
 
-Integrations with any API, library or service external to the application are implemented here. To do this, the integration implementation class must follow a contract defined at the domain layer.
+Handles integrations with external APIs, libraries, or services. The integration implementation classes must adhere to contracts defined in the domain layer.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE file](LICENSE) for details. You are free to use, modify, and distribute this template for commercial and non-commercial purposes.
