@@ -18,7 +18,6 @@ pydantic="2.5.3"
 pylint="3.0.3"
 autopep8="2.0.4"
 isort="5.13.2"
-black="23.12.1"
 flake8="6.1.0"
 # Test libs
 pytest="7.4.4"
