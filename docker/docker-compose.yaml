@@ -12,6 +12,19 @@ services:
       - ../:/home/app
     networks:
       - app_network
+
+  py-awesome-template-mongodb:
+    container_name: py-awesome-template-mongodb
+    image: mongo
+    environment:
+      - MONGO_INITDB_DATABASE=${DB_DATABASE}
+    ports:
+      - ${DB_PORT}:27017
+    volumes:
+      - ../data/db:/data/db
+    networks:
+      - app_network
+
 networks:
   app_network:
     driver: bridge

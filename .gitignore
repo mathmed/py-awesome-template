@@ -94,6 +94,7 @@ ipython_config.py
 #   install all needed dependencies.
 #Pipfile.lock
 poetry.lock
+data/db
 
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
