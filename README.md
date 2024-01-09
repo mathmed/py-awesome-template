@@ -90,6 +90,55 @@ The layer for accessing the application's use cases and exposing the application
 
 Handles integrations with external APIs, libraries, or services. The integration implementation classes must adhere to contracts defined in the domain layer.
 
+## Example Usage
+
+Explore the [example branch](https://github.com/mathmed/py-awesome-template/tree/example) to see a practical demonstration of using the template. The example includes routes for creating a user, authentication, and accessing routes that require authentication.
+
+To run the example, switch to **example** branch
+
+```sh
+$ git checkout example
+```
+
+Run the server
+
+```sh
+$ make dev-build
+```
+
+#### Create user route example
+
+```sh
+curl --request POST \
+  --url http://localhost:5000/users \
+  --header 'Content-Type: application/json' \
+  --data '{
+	"name": "Some name",
+	"email": "someemail@mail.com",
+	"password": "somepassword"
+}'
+```
+
+#### Signin route example
+
+```sh
+curl --request POST \
+  --url http://localhost:5000/signin \
+  --header 'Content-Type: application/json' \
+  --data '{
+	"email": "someemail@mail.com",
+	"password": "somepassword"
+}'
+```
+
+#### Authenticated route example
+
+```sh
+curl --request GET \
+  --url http://localhost:5000/users/some-authenticated-route \
+  --header 'Authorization: Bearer <bearer_here>'
+```
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE file](LICENSE) for details. You are free to use, modify, and distribute this template for commercial and non-commercial purposes.
