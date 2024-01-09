@@ -1,7 +1,6 @@
 
-from dataclasses import dataclass
+from pydantic import BaseModel as PydanticBaseModel
 
 
-@dataclass
-class BaseModel:
+class BaseModel(PydanticBaseModel):
     pass
