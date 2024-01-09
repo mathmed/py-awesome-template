@@ -1,11 +1,10 @@
 
 from hashlib import sha256
-from os import urandom
 
 
 def encrypt(text: str) -> str:
     hash_object = sha256()
-    hash_object.update(urandom(32) + text.encode())
+    hash_object.update(text.encode())
     return hash_object.hexdigest()
 
 

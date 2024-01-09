@@ -1,1 +1,1 @@
-from .create_user import CreateUser, CreateUserParams, CreateUserResponse
+from .create_user import CreateUser, CreateUserParams, CreateUserResponse, CreateUserResponseData

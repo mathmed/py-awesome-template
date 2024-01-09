@@ -16,9 +16,15 @@ class CreateUserParams(InputData):
     password: str
 
 
+class CreateUserResponseData(InputData):
+    id: str
+    name: str
+    email: str
+
+
 class CreateUserResponse(InputData):
     success: bool
-    data: Optional[Dict] = None
+    data: Optional[CreateUserResponseData] = None
     errorMessage: Optional[str] = None
 
 
@@ -54,12 +60,12 @@ class CreateUser(Usecase):
                 errorMessage=str(error)
             )
 
-    def _mount_response_data(self, user: User) -> Dict:
-        return {
-            'id': user.id,
-            'name': user.name,
-            'email': user.email
-        }
+    def _mount_response_data(self, user: User) -> CreateUserResponseData:
+        return CreateUserResponseData(
+            id=user.id,
+            name=user.name,
+            email=user.email
+        )
 
     def _validate_params(self):
         if not is_valid_email(self._params.email):
