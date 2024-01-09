@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import app.presentation.fastapi.routes as routes
-from app.presentation.fastapi.middlewares.example_middleware import example_middleware
 
 
 def apply_routes_config(app: FastAPI):
@@ -33,9 +32,6 @@ def make_fastapi_app():
         allow_methods=['*'],
         allow_headers=['*'],
     )
-
-    # To add general middlewares, uncomment the following lines
-    app.middleware('http')(example_middleware)
 
     apply_routes_config(app)
     return app

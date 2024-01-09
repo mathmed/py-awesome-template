@@ -5,6 +5,7 @@ from fastapi import APIRouter, Request, Response
 
 from app.domain.usecases.users.create import CreateUserParams, CreateUserResponseData
 from app.presentation.factories.usecases_factories import create_user_factory
+from app.presentation.fastapi.middlewares.auth_middleware import auth_middleware
 
 router = APIRouter(
     prefix="/users",
@@ -24,3 +25,9 @@ async def create_user(request: Request, response: Response, body: CreateUserPara
         return result.data
     response.status_code = HTTPStatus.BAD_REQUEST
     return {"error": result.errorMessage}
+
+
+@router.get("/some-authenticated-route", status_code=HTTPStatus.OK)
+@auth_middleware
+async def some_authenticated_route(request: Request, response: Response):
+    return {"message": "Authenticated route"}
