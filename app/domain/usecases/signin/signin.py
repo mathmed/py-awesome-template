@@ -1,11 +1,10 @@
 from time import time
-from typing import Optional
 
 from app.domain.contracts import DatabaseContract, JWTContract
 from app.domain.contracts.usecase import InputData, Usecase
 from app.domain.entities.models import User
 from app.domain.services.helpers.constants.auth import JWT_SECRET, JWT_TOKEN_ALIVE_TIME
-from app.domain.services.helpers.errors import Error
+from app.domain.services.helpers.errors import InvalidPasswordError, UserNotFoundError
 
 
 class SigninParams(InputData):
@@ -13,14 +12,9 @@ class SigninParams(InputData):
     password: str
 
 
-class SigninResponseData(InputData):
+class SigninResponse(InputData):
     accessToken: str
     expiresIn: int
-
-
-class SigninResponse(InputData):
-    authorized: bool = False
-    data: Optional[SigninResponseData] = None
 
 
 class Signin(Usecase):
@@ -36,31 +30,29 @@ class Signin(Usecase):
         self._jwt = jwt
 
     def execute(self, params: SigninParams) -> SigninResponse:
+        """
+            raises InvalidPasswordError, UserNotFoundError, Exception
+        """
 
         try:
             self._params = params
             user = self._get_user()
             self._verify_password(user)
-            return SigninResponse(
-                authorized=True,
-                data=self._mount_access_token(user)
-            )
-        except Error:
-            return SigninResponse(
-                authorized=False,
-            )
+            return self._mount_response(user)
+        except Exception as error:
+            raise error
 
     def _verify_password(self, user: User):
         if not user.verify_password(self._params.password):
-            raise Error('Invalid password')
+            raise InvalidPasswordError
 
     def _get_user(self) -> User:
         user = self._database.find_one(User, 'email', self._params.email)
         if not user:
-            raise Error('User not found')
+            raise UserNotFoundError
         return user
 
-    def _mount_access_token(self, user: User) -> SigninResponseData:
+    def _mount_response(self, user: User) -> SigninResponse:
         now = int(time())
         payload = {
             'iss': 'Example APP',
@@ -68,7 +60,7 @@ class Signin(Usecase):
             'exp': now + JWT_TOKEN_ALIVE_TIME,
             'email': user.email
         }
-        return SigninResponseData(
+        return SigninResponse(
             accessToken=self._jwt.encode(
                 payload=payload,
                 secret=JWT_SECRET

@@ -1,11 +1,10 @@
 
-from typing import Dict, Optional
 from uuid import uuid4
 
 from app.domain.contracts import DatabaseContract
 from app.domain.contracts.usecase import InputData, Usecase
 from app.domain.entities.models.user import User
-from app.domain.services.helpers.errors import Error
+from app.domain.services.helpers.errors import EmailAlreadyExistsError, InvalidFieldError
 from app.domain.services.helpers.hash import encrypt
 from app.domain.services.helpers.validations import is_valid_email, is_valid_name, is_valid_password
 
@@ -16,16 +15,10 @@ class CreateUserParams(InputData):
     password: str
 
 
-class CreateUserResponseData(InputData):
+class CreateUserResponse(InputData):
     id: str
     name: str
     email: str
-
-
-class CreateUserResponse(InputData):
-    success: bool
-    data: Optional[CreateUserResponseData] = None
-    errorMessage: Optional[str] = None
 
 
 class CreateUser(Usecase):
@@ -39,6 +32,9 @@ class CreateUser(Usecase):
         self._database = database
 
     def execute(self, params: CreateUserParams) -> CreateUserResponse:
+        """
+            raises InvalidFieldError, EmailAlreadyExistsError, Exception
+        """
 
         try:
             self._params = params
@@ -50,30 +46,21 @@ class CreateUser(Usecase):
             user = self._insert_user()
 
             return CreateUserResponse(
-                data=self._mount_response_data(user),
-                success=True
+                id=user.id,
+                name=user.name,
+                email=user.email
             )
 
-        except Error as error:
-            return CreateUserResponse(
-                success=False,
-                errorMessage=str(error)
-            )
-
-    def _mount_response_data(self, user: User) -> CreateUserResponseData:
-        return CreateUserResponseData(
-            id=user.id,
-            name=user.name,
-            email=user.email
-        )
+        except Exception as error:
+            raise error
 
     def _validate_params(self):
         if not is_valid_email(self._params.email):
-            raise Error('Invalid email format')
+            raise InvalidFieldError('email')
         if not is_valid_name(self._params.name):
-            raise Error('Invalid name - must be at least 3 characters')
+            raise InvalidFieldError('name')
         if not is_valid_password(self._params.password):
-            raise Error('Invalid password - must be at least 6 characters')
+            raise InvalidFieldError('password')
 
     def _insert_user(self) -> User:
         return self._database.insert(
@@ -91,4 +78,4 @@ class CreateUser(Usecase):
             by='email',
             value=self._params.email
         ):
-            raise Error('Email already exists')
+            raise EmailAlreadyExistsError

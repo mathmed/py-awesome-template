@@ -1,1 +1,1 @@
-from .signin import Signin, SigninParams, SigninResponse, SigninResponseData
+from .signin import Signin, SigninParams, SigninResponse

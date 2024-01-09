@@ -1,1 +1,2 @@
-from .errors import Error
+from .generic_errors import *
+from .user_errors import *

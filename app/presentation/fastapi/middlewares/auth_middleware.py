@@ -6,7 +6,7 @@ from typing import Dict, Optional
 from fastapi import Request
 
 from app.domain.services.helpers.constants.auth import JWT_SECRET
-from app.domain.services.helpers.errors import Error
+from app.domain.services.helpers.errors import UnauthorizedError
 from app.infra.jwt.jwt import JWT
 
 
@@ -23,19 +23,19 @@ def auth_middleware(func):
             auth_header: Optional[str] = headers.get('Authorization', None)
 
             if not auth_header:
-                raise Error(HTTPStatus.UNAUTHORIZED)
+                raise UnauthorizedError
 
             auth_type, credentials = auth_header.split(' ')
 
             if auth_type.lower() != 'bearer':
-                raise Error(HTTPStatus.UNAUTHORIZED)
+                raise UnauthorizedError
 
             decoded_bearer = JWT().decode(
                 secret=JWT_SECRET,
                 text=credentials,
             )
             if not decoded_bearer:
-                raise Error(HTTPStatus.UNAUTHORIZED)
+                raise UnauthorizedError
 
         except Exception:
             response.status_code = HTTPStatus.UNAUTHORIZED  # type: ignore
