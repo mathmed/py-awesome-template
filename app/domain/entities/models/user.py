@@ -4,5 +4,8 @@ from app.domain.entities.models.base_model import BaseModel
 
 
 @dataclass
-class ExampleModel(BaseModel):
-    field1: str
+class User(BaseModel):
+    id: str
+    name: str
+    email: str
+    password: str
