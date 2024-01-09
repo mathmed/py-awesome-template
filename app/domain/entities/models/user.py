@@ -1,10 +1,7 @@
-from dataclasses import dataclass
-
 from app.domain.entities.models.base_model import BaseModel
 from app.domain.services.helpers.hash import compare
 
 
-@dataclass
 class User(BaseModel):
     id: str
     name: str

@@ -45,4 +45,4 @@ class MongoDB(DatabaseContract):
     def _parse_result(result: Dict, model: Type[MODEL]) -> MODEL:
         result['id'] = str(result['_id'])
         del result['_id']
-        return model(**result)
+        return model.model_validate(result)  # type: ignore
