@@ -35,11 +35,12 @@ def test_should_raise_if_user_not_found(sut: Signin, params: SigninParams):
         # When
         sut.execute(params)
 
-        # Then
-        sut._database.find_one.assert_called_once_with(
-            collection='users',
-            query={'email': params.email}
-        )
+    # Then
+    sut._database.find_one.assert_called_once_with(
+        model=User,
+        by='email',
+        value=params.email
+    )
 
 
 def test_should_raise_if_password_does_not_match(sut: Signin, params: SigninParams, faker: Faker):
@@ -54,11 +55,12 @@ def test_should_raise_if_password_does_not_match(sut: Signin, params: SigninPara
         # When
         sut.execute(params)
 
-        # Then
-        sut._database.find_one.assert_called_once_with(
-            collection='users',
-            query={'email': params.email}
-        )
+    # Then
+    sut._database.find_one.assert_called_once_with(
+        model=User,
+        by='email',
+        value=params.email
+    )
 
 
 @patch('app.domain.entities.models.user.compare', return_value=True)

@@ -47,7 +47,11 @@ class Signin(Usecase):
             raise InvalidPasswordError
 
     def _get_user(self) -> User:
-        user = self._database.find_one(User, 'email', self._params.email)
+        user = self._database.find_one(
+            model=User,
+            by='email',
+            value=self._params.email
+        )
         if not user:
             raise UserNotFoundError
         return user

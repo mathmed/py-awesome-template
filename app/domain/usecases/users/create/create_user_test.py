@@ -63,12 +63,12 @@ def test_should_raise_if_user_already_exists(sut: CreateUser, params: CreateUser
         # When
         sut.execute(params)
 
-        # Then
-        sut._database.find_one.assert_called_once_with(
-            model=User,
-            by='email',
-            value=params.email
-        )
+    # Then
+    sut._database.find_one.assert_called_once_with(
+        model=User,
+        by='email',
+        value=params.email
+    )
 
 
 def test_should_return_user_on_success(sut: CreateUser, params: CreateUserParams, faker: Faker):
