@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "py-hexagonal-architecture"
+name = "py-awesome-template"
 description = ""
 authors = []
 version = "1.0.0"
@@ -27,7 +27,7 @@ Faker="22.0.0"
 coverage="7.4.0"
 
 [project.urls]
-"Homepage" = "https://github.com/mathmed/py-hexagonal-architecture"
+"Homepage" = "https://github.com/mathmed/py-awesome-template"
 
 [tool.autopep8]
 max_line_length = 120
