@@ -14,7 +14,9 @@ Kickstart your Python 3.14 project with Clean Architecture. This robust template
 
 - Dependabot: Weekly grouped updates for Python dependencies and GitHub Actions.
 
-- Docker Support: Easily run your project locally using Docker. No hassle with dependencies; everything is containerized.
+- Production Ready Basics: typed settings with [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/), structured JSON logs in production, configurable CORS, domain errors mapped to HTTP status codes and a `/health` route.
+
+- Docker Support: a `dev` stage with hot reload and a slim, non-root `production` stage with healthcheck.
 
 ## Setup project
 
@@ -23,6 +25,17 @@ Kickstart your Python 3.14 project with Clean Architecture. This robust template
 Run `make setup` to install [uv](https://docs.astral.sh/uv/) (if missing), the project dependencies (uv fetches Python 3.14 if needed), create the `.env` file and install the git hooks.
 
 Then run `make run` to start the server locally, or `make dev` to run it with Docker ([install guide](https://docs.docker.com/engine/install/)).
+
+### Environment variables
+
+Settings are loaded from environment variables (or the `.env` file) by `app/domain/services/helpers/envs/settings.py`. Add new variables there and to `.env.example`.
+
+| Variable     | Default                   | Description                                                   |
+| ------------ | ------------------------- | ------------------------------------------------------------- |
+| APP_PORT     | -                         | Host port used by `make dev`.                                 |
+| ENV          | development               | `development`, `test` or `production`. Production logs JSON.  |
+| LOG_LEVEL    | INFO                      | Python logging level.                                         |
+| CORS_ORIGINS | []                        | JSON list of allowed origins, e.g. `["http://localhost:3000"]`. |
 
 ### Installing Dependencies
 
@@ -38,6 +51,7 @@ Use the following commands in the root folder with **make**:
 | make run         | Run the project locally with uv.                                                        |
 | make dev         | Run the project with Docker.                                                            |
 | make dev-build   | Run the project with Docker, rebuilding the image. Useful after changing the Dockerfile. |
+| make build       | Build the production docker image.                                                      |
 | make test        | Run unit tests with coverage.                                                           |
 | make hooks       | Run all quality checks (ruff, mypy, bandit, vulture, xenon, pip-audit).                 |
 | make check-code  | Lint and check code formatting with ruff.                                               |
@@ -47,6 +61,7 @@ Use the following commands in the root folder with **make**:
 
 | File                      | Description                                                                                          |
 | ------------------------- | ---------------------------------------------------------------------------------------------------- |
+| .dockerignore             | Files excluded from the docker build context.                                                        |
 | .env.example              | Define environment variables. Create a .env file in the project root based on .env.example.          |
 | .python-version           | Python version used by uv.                                                                           |
 | .pre-commit-config.yaml   | Git hooks running all quality checks before each commit.                                             |
@@ -66,15 +81,15 @@ The layers (folders) have the following responsibilities:
 
 ### Main
 
-Basic settings and starting point where the "app" is created.
+Starting point where settings and logging are loaded and the "app" is created.
 
 ### Domain
 
-The core layer housing use cases, models, entities, services (common codes), and contracts. Contracts are interfaces that abstract external libraries or services, implemented in the infrastructure layer. The domain layer should never directly access other layers but interact through interfaces using dependency injection.
+The core layer housing use cases, models, entities, services (common codes, settings and domain errors), and contracts. Contracts are interfaces that abstract external libraries or services, implemented in the infrastructure layer. The domain layer should never directly access other layers but interact through interfaces using dependency injection.
 
 ### Presentation
 
-The layer for accessing the application's use cases and exposing the application to the external world, often through HTTP/REST (e.g., FastAPI or Flask). The presentation layer utilizes the factory pattern to instantiate classes needed to execute a use case.
+The layer for accessing the application's use cases and exposing the application to the external world, often through HTTP/REST (e.g., FastAPI or Flask). The presentation layer utilizes the factory pattern to instantiate classes needed to execute a use case. Domain errors (`NotFoundError`, `ConflictError`, ...) raised by use cases are converted to HTTP responses by `handlers/domain_error_handler.py`.
 
 ### Infra
 

@@ -1,4 +1,4 @@
-.PHONY: setup dev dev-build run test hooks check-code format-code
+.PHONY: setup dev dev-build run build test hooks check-code format-code
 
 # Install uv (if missing), project dependencies and git hooks
 setup:
@@ -18,6 +18,10 @@ dev:
 # Start project in development mode with rebuild (docker)
 dev-build:
 	docker compose --env-file=.env -f ./docker/docker-compose.yaml up --build
+
+# Build the production docker image
+build:
+	docker build --target production -t py-awesome-template -f docker/Dockerfile .
 
 # Start project locally without docker
 run:

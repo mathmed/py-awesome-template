@@ -1,13 +1,13 @@
-version: "3.5"
 services:
   py-awesome-template:
     container_name: py-awesome-template
     build:
       context: ../
       dockerfile: ./docker/Dockerfile
+      target: dev
     ports:
       # Change on the .env file on the root of the project
-      - ${APP_PORT}:80
+      - ${APP_PORT}:8000
     volumes:
       - ../:/home/app
     networks:

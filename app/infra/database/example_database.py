@@ -1,5 +1,9 @@
+import logging
+
 from app.domain.contracts.example_database_contract import ExampleDatabaseContract
 from app.domain.entities.models.base_model import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 class ExampleDatabase(ExampleDatabaseContract):
@@ -8,5 +12,5 @@ class ExampleDatabase(ExampleDatabaseContract):
     """
 
     def insert(self, model: BaseModel) -> BaseModel:
-        print(f"Inserted! {model}")
+        logger.info("Inserted %s", model)
         return model

@@ -1,8 +1,8 @@
-from dotenv import load_dotenv
+from app.domain.services.helpers.envs.settings import get_settings
 
-# Load all environment variables from .env file before app starts
-load_dotenv()
+from app.main.logger import configure_logging
+from app.presentation.fastapi.configs.configs import make_fastapi_app
 
-from app.presentation.fastapi.configs.configs import make_fastapi_app  # noqa: E402
-
-app = make_fastapi_app()
+settings = get_settings()
+configure_logging(settings)
+app = make_fastapi_app(settings)

@@ -5,8 +5,7 @@ from pytest import fixture
 
 from app.domain.contracts.example_database_contract import ExampleDatabaseContract
 from app.domain.entities.models.example_model import ExampleModel
-
-from .example_usecase import ExampleUsecase, ExampleUsecaseParams
+from app.domain.usecases.example.example_usecase import ExampleUsecase, ExampleUsecaseParams
 
 
 @fixture
