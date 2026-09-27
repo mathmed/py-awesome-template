@@ -1,16 +1,11 @@
 # py-awesome-template
 
 [![CI](https://github.com/mathmed/py-awesome-template/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mathmed/py-awesome-template/actions/workflows/ci.yml)
-[![Coverage](https://raw.githubusercontent.com/mathmed/py-awesome-template/python-coverage-comment-action-data/badge.svg)](https://htmlpreview.github.io/?https://github.com/mathmed/py-awesome-template/blob/python-coverage-comment-action-data/htmlcov/index.html)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/mathmed/py-awesome-template/python-coverage-comment-action-data/endpoint.json)](https://htmlpreview.github.io/?https://github.com/mathmed/py-awesome-template/blob/python-coverage-comment-action-data/htmlcov/index.html)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://www.mypy-lang.org/static/mypy_badge.svg)](https://mypy-lang.org/)
 [![Security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
-[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
 [![Dependabot](https://img.shields.io/badge/dependabot-enabled-025E8C?logo=dependabot)](.github/dependabot.yaml)
-[![License: MIT](https://img.shields.io/github/license/mathmed/py-awesome-template)](LICENSE)
 
 A production-ready starting point for Python 3.14 APIs with FastAPI: a layered folder structure, modern tooling with [uv](https://docs.astral.sh/uv/) and [ruff](https://docs.astral.sh/ruff/), quality gates in pre-commit and CI, and Docker for development and production.
 
