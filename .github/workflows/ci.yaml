@@ -9,9 +9,6 @@ env:
   GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
   REPO_NAME: ${{github.event.repository.name}}
 
-  # Set the SONAR_TOKEN secret in your repository settings. The SONAR_TOKEN can be generated in the SonarCloud UI.
-  SONAR_TOKEN: ${{secrets.SONAR_TOKEN}}
-
 jobs:
   code-styles-and-unit-test:
     runs-on: ubuntu-latest
@@ -35,22 +32,5 @@ jobs:
         run: poetry run isort --check-only ./app
 
       - name: Test Coverage with Pytest
-        run: ENV='test' poetry run pytest --cov-config=.coveragerc --cov-report=xml --doctest-modules --cov=. app/
+        run: ENV='test' poetry run pytest --cov-config=.coveragerc --cov-report=term-missing --doctest-modules --cov=. app/
 
-      - name: Archive code coverage results
-        uses: actions/upload-artifact@v3
-        with:
-          name: code-coverage-report
-          path: coverage.xml
-
-  sonar-scan:
-    needs: code-styles-and-unit-test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Download code coverage results
-        uses: actions/download-artifact@v3
-
-      - name: "Move coverage file to correct folder"
-        run: sed -i 's+/home/runner/work/${{env.REPO_NAME}}/${{env.REPO_NAME}}+/github/workspace+g' code-coverage-report/coverage.xml
-      - uses: SonarSource/sonarcloud-github-action@master

@@ -1,17 +1,6 @@
-[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=py-awesome-template&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=py-awesome-template)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=py-awesome-template&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=py-awesome-template)
-[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=py-awesome-template&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=py-awesome-template)
-[![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=py-awesome-template&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=py-awesome-template)
-[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=py-awesome-template&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=py-awesome-template)
-[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=py-awesome-template&metric=bugs)](https://sonarcloud.io/summary/new_code?id=py-awesome-template)
-[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=py-awesome-template&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=py-awesome-template)
-[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=py-awesome-template&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=py-awesome-template)
-[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=py-awesome-template&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=py-awesome-template)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=py-awesome-template&metric=coverage)](https://sonarcloud.io/summary/new_code?id=py-awesome-template)
-
 # py-awesome-template
 
-Kickstart your Python Python 3.x project with Clean Architecture. This robust template embraces the principles of Clean Architecture. This template not only provides a well-organized folder structure but also comes pre-configured with essential tools and settings, including code styling, continuous integration, Docker support, and SonarCloud integration.
+Kickstart your Python Python 3.x project with Clean Architecture. This robust template embraces the principles of Clean Architecture. This template not only provides a well-organized folder structure but also comes pre-configured with essential tools and settings, including code styling, continuous integration and Docker support.
 
 ## Features
 
@@ -19,9 +8,7 @@ Kickstart your Python Python 3.x project with Clean Architecture. This robust te
 
 - Code Styles Pre-configuration: We've set up pylint, autopep8, flake8, and isort to help you maintain consistent and clean code.
 
-- SonarCloud Integration: Leverage the power of SonarCloud for in-depth code analysis. Keep track of technical debt, code quality, reliability, and more.
-
-- Continuous Integration (GitHub Actions): A robust CI pipeline is ready to check code styles, run unit tests, and perform SonarCloud scans with each push.
+- Continuous Integration (GitHub Actions): A robust CI pipeline is ready to check code styles and run unit tests with each push.
 
 - Docker Support: Easily run your project locally using Docker. No hassle with dependencies; everything is containerized.
 
@@ -30,13 +17,6 @@ Kickstart your Python Python 3.x project with Clean Architecture. This robust te
 ### Getting Started
 
 To run the project locally, ensure you have Docker installed. If not, follow the installation [guide here](https://docs.docker.com/engine/install/).
-
-### Sonar Config
-
-For code analysis on each push, configure SonarCloud. Create a new project using GitHub Actions on SonarCloud. Grab the `SONAR_TOKEN` and create a secret with the same name in your GitHub repository. Update the `sonar-project.properties` file with your `sonar.projectKey` and `sonar.organization` from the SonarCloud configuration page.
-
-> [!NOTE]
-> SonarCloud is free for personal use in public repositories.
 
 ### Installing Dependencies
 
@@ -63,7 +43,6 @@ Use the following commands in the root folder with **make**:
 | .flake8                  | Define flake8 code styles.                                                                   |
 | Makefile                 | Create shortcuts for commands using make.                                                    |
 | pyproject.toml           | Set project details, add dependencies, and define autopep8, pylint and isort configurations. |
-| sonar-project.properties | Set the SonarCloud configurations.                                                           |
 | pytest.ini               | Set pytest configurations.                                                                   |
 | github/workflows/ci.yaml | Github Actions CI configuration file.                                                        |
 
