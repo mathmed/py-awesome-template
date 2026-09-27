@@ -33,15 +33,15 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["app"]
-python_files = ["*_test.py", "test_*.py"]
+testpaths = ["tests"]
+pythonpath = ["."]
 asyncio_mode = "auto"
 addopts = "--import-mode=importlib"
 
 [tool.coverage.run]
 source = ["app"]
 relative_files = true
-omit = ["*/__init__.py", "*_test.py"]
+omit = ["*/__init__.py"]
 
 [tool.coverage.report]
 fail_under = 80

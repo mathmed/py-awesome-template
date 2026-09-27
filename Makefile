@@ -1,4 +1,4 @@
-.PHONY: setup dev dev-build run build test hooks check-code format-code
+.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code
 
 # Install uv (if missing), project dependencies and git hooks
 setup:
@@ -27,9 +27,13 @@ build:
 run:
 	uv run uvicorn app.main.main:app --reload --host 0.0.0.0 --port 8000
 
-# Run unit tests with coverage
+# Run all tests with coverage
 test:
 	uv run pytest --cov --cov-report=term-missing
+
+# Run only the fast unit tests
+test-unit:
+	uv run pytest tests/unit
 
 # Run all quality checks (ruff, mypy, bandit, vulture, xenon, pip-audit)
 hooks:

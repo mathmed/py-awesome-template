@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import UTC, datetime
 
-from app.domain.services.helpers.envs.settings import Settings
+from app.domain.common.envs.settings import Settings
 
 
 class JsonFormatter(logging.Formatter):

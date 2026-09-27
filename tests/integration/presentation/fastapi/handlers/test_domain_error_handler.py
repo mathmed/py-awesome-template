@@ -1,12 +1,12 @@
-from app.domain.services.helpers.errors.domain_errors import (
-    ConflictError,
-    DomainError,
-    NotFoundError,
-)
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pytest import fixture, mark
 
+from app.domain.common.errors.domain_errors import (
+    ConflictError,
+    DomainError,
+    NotFoundError,
+)
 from app.presentation.fastapi.handlers.domain_error_handler import register_error_handlers
 
 

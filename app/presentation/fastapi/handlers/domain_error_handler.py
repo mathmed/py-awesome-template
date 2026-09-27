@@ -1,10 +1,11 @@
-from app.domain.services.helpers.errors.domain_errors import (
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+
+from app.domain.common.errors.domain_errors import (
     ConflictError,
     DomainError,
     NotFoundError,
 )
-from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
 
 STATUS_BY_ERROR: dict[type[DomainError], int] = {
     NotFoundError: status.HTTP_404_NOT_FOUND,

@@ -28,7 +28,7 @@ Then run `make run` to start the server locally, or `make dev` to run it with Do
 
 ### Environment variables
 
-Settings are loaded from environment variables (or the `.env` file) by `app/domain/services/helpers/envs/settings.py`. Add new variables there and to `.env.example`.
+Settings are loaded from environment variables (or the `.env` file) by `app/domain/common/envs/settings.py`. Add new variables there and to `.env.example`.
 
 | Variable     | Default                   | Description                                                   |
 | ------------ | ------------------------- | ------------------------------------------------------------- |
@@ -52,7 +52,8 @@ Use the following commands in the root folder with **make**:
 | make dev         | Run the project with Docker.                                                            |
 | make dev-build   | Run the project with Docker, rebuilding the image. Useful after changing the Dockerfile. |
 | make build       | Build the production docker image.                                                      |
-| make test        | Run unit tests with coverage.                                                           |
+| make test        | Run all tests (unit + integration) with coverage.                                       |
+| make test-unit   | Run only the unit tests.                                                                |
 | make hooks       | Run all quality checks (ruff, mypy, bandit, vulture, xenon, pip-audit).                 |
 | make check-code  | Lint and check code formatting with ruff.                                               |
 | make format-code | Fix lint issues and format code with ruff.                                              |
@@ -85,7 +86,7 @@ Starting point where settings and logging are loaded and the "app" is created.
 
 ### Domain
 
-The core layer housing use cases, models, entities, services (common codes, settings and domain errors), and contracts. Contracts are interfaces that abstract external libraries or services, implemented in the infrastructure layer. The domain layer should never directly access other layers but interact through interfaces using dependency injection.
+The core layer housing use cases, models, entities, services, common code (`common/`: settings, domain errors, constants and enums), and contracts. Contracts are interfaces that abstract external libraries or services, implemented in the infrastructure layer. The domain layer should never directly access other layers but interact through interfaces using dependency injection.
 
 ### Presentation
 
@@ -94,6 +95,10 @@ The layer for accessing the application's use cases and exposing the application
 ### Infra
 
 Handles integrations with external APIs, libraries, or services. The integration implementation classes must adhere to contracts defined in the domain layer.
+
+### Tests
+
+Tests live in `tests/`, outside the application code, mirroring the `app/` structure: `tests/unit/` for fast tests with mocked dependencies and `tests/integration/` for HTTP tests with `TestClient`.
 
 ## Example Usage
 

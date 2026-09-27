@@ -2,7 +2,7 @@ import json
 import logging
 import sys
 
-from app.domain.services.helpers.envs.settings import Environment, Settings
+from app.domain.common.envs.settings import Environment, Settings
 from app.main.logger import JsonFormatter, configure_logging
 
 

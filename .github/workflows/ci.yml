@@ -45,7 +45,7 @@ jobs:
           MINIMUM_ORANGE: 70
 
       - name: Type check
-        run: uv run --locked mypy app
+        run: uv run --locked mypy app tests
 
       - name: Security scan
         run: uv run --locked bandit -r app -ll

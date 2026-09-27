@@ -1,8 +1,8 @@
-from app.domain.services.helpers.envs.settings import Settings
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import app.presentation.fastapi.routes as routes
+from app.domain.common.envs.settings import Settings
 from app.presentation.fastapi.handlers.domain_error_handler import register_error_handlers
 from app.presentation.fastapi.middlewares.request_logging_middleware import (
     request_logging_middleware,
