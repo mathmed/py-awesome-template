@@ -7,10 +7,6 @@ logger = logging.getLogger(__name__)
 
 
 class ExampleDatabase(ExampleDatabaseContract):
-    """
-    This class is an example of a database implementation that implements the ExampleDatabaseContract
-    """
-
     def insert(self, model: BaseModel) -> BaseModel:
         logger.info("Inserted %s", model)
         return model

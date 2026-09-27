@@ -21,7 +21,7 @@ def make_record(exc_info: bool = False) -> logging.LogRecord:
         )
 
 
-def test_json_formatter_should_serialize_record() -> None:
+def test_should_serialize_record_as_json() -> None:
     payload = json.loads(JsonFormatter().format(make_record()))
     assert payload["level"] == "ERROR"
     assert payload["logger"] == "some.logger"
@@ -29,11 +29,11 @@ def test_json_formatter_should_serialize_record() -> None:
     assert "exception" not in payload
 
 
-def test_json_formatter_should_include_exception() -> None:
+def test_should_include_exception_in_json() -> None:
     payload = json.loads(JsonFormatter().format(make_record(exc_info=True)))
     assert "ValueError: boom" in payload["exception"]
 
 
-def test_configure_logging_should_use_json_in_production() -> None:
+def test_should_use_json_formatter_in_production() -> None:
     configure_logging(Settings(env=Environment.PRODUCTION))
     assert isinstance(logging.getLogger().handlers[0].formatter, JsonFormatter)

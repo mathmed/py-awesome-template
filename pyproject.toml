@@ -48,6 +48,7 @@ fail_under = 80
 
 [tool.mypy]
 python_version = "3.14"
+strict = true
 ignore_missing_imports = true
 warn_unused_ignores = true
 explicit_package_bases = true

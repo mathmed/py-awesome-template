@@ -3,22 +3,22 @@ from app.domain.contracts.usecase import InputData, Usecase
 from app.domain.entities.models.example_model import ExampleModel
 
 
-class ExampleUsecaseParams(InputData):
+class CreateExampleParams(InputData):
     field1: str
 
 
-class ExampleUsecaseResponse(InputData):
+class CreateExampleResponse(InputData):
     message: str
 
 
-class ExampleUsecase(Usecase[ExampleUsecaseParams, ExampleUsecaseResponse]):
+class CreateExampleUsecase(Usecase[CreateExampleParams, CreateExampleResponse]):
     def __init__(self, database: ExampleDatabaseContract):
         self.database = database
 
-    def execute(self, params: ExampleUsecaseParams) -> ExampleUsecaseResponse:
+    def execute(self, params: CreateExampleParams) -> CreateExampleResponse:
         model = self.database.insert(
             ExampleModel(
                 field1=params.field1,
             )
         )
-        return ExampleUsecaseResponse(message=f"Model inserted! {model.__dict__}")
+        return CreateExampleResponse(message=f"Model inserted! {model.__dict__}")

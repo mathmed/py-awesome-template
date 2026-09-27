@@ -18,6 +18,7 @@ A production-ready starting point for Python 3.14 APIs with FastAPI: a layered f
 - **Dependabot**: weekly grouped updates for Python dependencies and GitHub Actions.
 - **Production basics**: typed settings ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)), JSON logs in production, configurable CORS, domain errors mapped to HTTP status codes and a `/health` route.
 - **Docker**: a `dev` stage with hot reload and a slim, non-root `production` stage with healthcheck.
+- **AI-ready**: `CLAUDE.md`/`AGENTS.md` with the project rules, Claude Code agents (`coder`, `reviewer`), permissions and a hook that formats every file the agent edits.
 
 ## Getting started
 
@@ -95,6 +96,20 @@ The domain never imports from `infra`, `presentation` or `common`: it declares c
 4. Factory in `presentation/factories/` and route in `presentation/fastapi/routes/` (register it in `routes/__init__.py`)
 5. Unit tests in `tests/unit/` and route tests in `tests/integration/`
 
+## AI-assisted development
+
+The template is ready for coding agents such as [Claude Code](https://docs.claude.com/en/docs/claude-code/overview):
+
+- **`CLAUDE.md`** (also `AGENTS.md`, a symlink read by Cursor, Codex and others): architecture rules, commands and the checklist every change must pass before a PR.
+- **`.claude/agents/coder.md`**: implements a task on a `claude/<slug>` branch, with tests, runs all checks and opens a PR.
+- **`.claude/agents/reviewer.md`**: read-only review of a branch against the project rules.
+- **`.claude/settings.json`**: allows the common commands (uv, make, read-only git, gh), denies destructive ones (`rm -rf`, force push, hard reset, reading `.env`) and runs `.claude/hooks/ruff.sh` after every edit, formatting the file and sending unfixable lint errors back to the agent.
+
+Create an empty `.local_dev` file at the root to work directly on your local branch: the agent then edits files without delegating to `coder` or opening PRs.
+
+> [!NOTE]
+> The **Personal preferences** section of `CLAUDE.md` holds the template author's own taste (no docstrings, `StrEnum` for fixed strings, latest dependency versions, etc.). They are not part of the architecture — change or remove them to match yours.
+
 ## Configuration files
 
 | File                         | Description                                                             |
@@ -107,6 +122,8 @@ The domain never imports from `infra`, `presentation` or `common`: it declares c
 | `.github/workflows/ci.yml`   | CI pipeline.                                                            |
 | `.github/dependabot.yaml`    | Dependency updates.                                                     |
 | `.vscode/settings.json`      | Ruff format on save and pytest integration.                             |
+| `CLAUDE.md` / `AGENTS.md`    | Instructions for AI coding agents.                                      |
+| `.claude/`                   | Claude Code agents, permissions and hooks.                              |
 | `docker/`                    | Dockerfile (`dev` and `production` stages) and docker compose.          |
 
 ## License

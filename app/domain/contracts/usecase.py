@@ -9,8 +9,4 @@ class InputData(BaseModel):
 
 class Usecase[Params, Response](ABC):
     @abstractmethod
-    def execute(self, params: Params) -> Response:
-        """
-        Only public method of a usecase. This method will be called by the presentation layer.
-        """
-        ...
+    def execute(self, params: Params) -> Response: ...

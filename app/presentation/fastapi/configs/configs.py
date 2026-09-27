@@ -10,17 +10,11 @@ from app.presentation.fastapi.middlewares.request_logging_middleware import (
 
 
 def apply_routes_config(app: FastAPI) -> None:
-    """
-    This function will apply all routers registered in app/presentation/fastapi/routes
-    """
     for router in routes.routers:
         app.include_router(router)
 
 
 def make_fastapi_app(settings: Settings) -> FastAPI:
-    """
-    This function will create a FastAPI instance and apply all routes defined in app/presentation/fastapi/routes
-    """
     app = FastAPI(
         title=settings.app_name,
         description="A template for Python projects",

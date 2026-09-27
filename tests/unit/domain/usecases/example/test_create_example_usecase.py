@@ -5,26 +5,30 @@ from pytest import fixture
 
 from app.domain.contracts.example_database_contract import ExampleDatabaseContract
 from app.domain.entities.models.example_model import ExampleModel
-from app.domain.usecases.example.example_usecase import ExampleUsecase, ExampleUsecaseParams
+from app.domain.usecases.example.create_example_usecase import (
+    CreateExampleParams,
+    CreateExampleUsecase,
+)
 
 
 @fixture
 def database() -> MagicMock:
-    return create_autospec(ExampleDatabaseContract)
+    database: MagicMock = create_autospec(ExampleDatabaseContract)
+    return database
 
 
 @fixture
-def sut(database: MagicMock) -> ExampleUsecase:
-    return ExampleUsecase(database=database)
+def sut(database: MagicMock) -> CreateExampleUsecase:
+    return CreateExampleUsecase(database=database)
 
 
 @fixture
-def params(faker: Faker) -> ExampleUsecaseParams:
-    return ExampleUsecaseParams(field1=faker.word())
+def params(faker: Faker) -> CreateExampleParams:
+    return CreateExampleParams(field1=faker.word())
 
 
 def test_should_insert_model_and_return_message(
-    sut: ExampleUsecase, database: MagicMock, params: ExampleUsecaseParams, faker: Faker
+    sut: CreateExampleUsecase, database: MagicMock, params: CreateExampleParams, faker: Faker
 ) -> None:
     database.insert.return_value = ExampleModel(field1=faker.word())
     response = sut.execute(params)
