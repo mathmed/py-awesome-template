@@ -11,12 +11,8 @@ class ExampleUsecaseResponse(InputData):
     message: str
 
 
-class ExampleUsecase(Usecase):
-
-    def __init__(
-        self,
-        database: ExampleDatabaseContract
-    ):
+class ExampleUsecase(Usecase[ExampleUsecaseParams, ExampleUsecaseResponse]):
+    def __init__(self, database: ExampleDatabaseContract):
         self.database = database
 
     def execute(self, params: ExampleUsecaseParams) -> ExampleUsecaseResponse:

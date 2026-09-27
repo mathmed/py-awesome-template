@@ -1,0 +1,50 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff (lint)
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: ruff-format
+        name: ruff (format)
+        entry: uv run ruff format
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: mypy
+        name: mypy (type check)
+        entry: uv run mypy app
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: bandit
+        name: bandit (security)
+        entry: uv run bandit -r app -ll -q
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: vulture
+        name: vulture (dead code)
+        entry: uv run vulture app --min-confidence 80
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: xenon
+        name: xenon (complexity)
+        entry: uv run xenon app --max-absolute B --max-modules A --max-average A
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: pip-audit
+        name: pip-audit
+        entry: uv run pip-audit
+        language: system
+        pass_filenames: false

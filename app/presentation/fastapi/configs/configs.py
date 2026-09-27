@@ -5,37 +5,31 @@ import app.presentation.fastapi.routes as routes
 from app.presentation.fastapi.middlewares.example_middleware import example_middleware
 
 
-def apply_routes_config(app: FastAPI):
+def apply_routes_config(app: FastAPI) -> None:
     """
-        This function will apply automatically all routes defined in app/presentation/fastapi/routes
+    This function will apply automatically all routes defined in app/presentation/fastapi/routes
     """
-    route_definitions = [
-        getattr(routes, variable) for variable in dir(routes) if not variable.startswith('__')
-    ]
-    for router in route_definitions:
-        try:
-            app.include_router(router.router)
-        except Exception:
-            pass
+    for router in routes.routers:
+        app.include_router(router)
 
 
-def make_fastapi_app():
+def make_fastapi_app() -> FastAPI:
     """
-        This function will create a FastAPI instance and apply all routes defined in app/presentation/fastapi/routes
+    This function will create a FastAPI instance and apply all routes defined in app/presentation/fastapi/routes
     """
     app = FastAPI(
-        title='Awesome Python Template',
-        description='A template for Python projects',
+        title="Awesome Python Template",
+        description="A template for Python projects",
     )
     app.add_middleware(
         CORSMiddleware,
         allow_credentials=True,
-        allow_methods=['*'],
-        allow_headers=['*'],
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     # To add general middlewares, uncomment the following lines
-    app.middleware('http')(example_middleware)
+    app.middleware("http")(example_middleware)
 
     apply_routes_config(app)
     return app

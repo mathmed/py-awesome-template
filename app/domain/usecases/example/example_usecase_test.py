@@ -1,5 +1,3 @@
-
-
 from unittest.mock import MagicMock, create_autospec
 
 from faker import Faker
@@ -12,24 +10,24 @@ from .example_usecase import ExampleUsecase, ExampleUsecaseParams
 
 
 @fixture
-def sut() -> ExampleUsecase:
-    return ExampleUsecase(
-        database=create_autospec(ExampleDatabaseContract)
-    )
+def database() -> MagicMock:
+    return create_autospec(ExampleDatabaseContract)
+
+
+@fixture
+def sut(database: MagicMock) -> ExampleUsecase:
+    return ExampleUsecase(database=database)
 
 
 @fixture
 def params(faker: Faker) -> ExampleUsecaseParams:
-    return ExampleUsecaseParams(
-        field1=faker.word()
-    )
+    return ExampleUsecaseParams(field1=faker.word())
 
 
-def test_should_return_hello_world(
-    sut: ExampleUsecase,
-    params: ExampleUsecaseParams,
-    faker: Faker
+def test_should_insert_model_and_return_message(
+    sut: ExampleUsecase, database: MagicMock, params: ExampleUsecaseParams, faker: Faker
 ) -> None:
-    sut.database.insert = MagicMock(return_value=ExampleModel(field1=faker.word()))
+    database.insert.return_value = ExampleModel(field1=faker.word())
     response = sut.execute(params)
-    assert response.message == f"Model inserted! {sut.database.insert.return_value.__dict__}"
+    database.insert.assert_called_once_with(ExampleModel(field1=params.field1))
+    assert response.message == f"Model inserted! {database.insert.return_value.__dict__}"

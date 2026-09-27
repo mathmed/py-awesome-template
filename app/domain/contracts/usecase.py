@@ -1,24 +1,16 @@
 from abc import ABC, abstractmethod
-from typing import Any, Optional
 
-from pydantic import BaseModel
-
-NOT_IMPLEMENTED_ERROR = 'This contract method must be implemented'
-
-
-class BaseClassConfig:
-    populate_by_name = True
+from pydantic import BaseModel, ConfigDict
 
 
 class InputData(BaseModel):
-    class Config(BaseClassConfig):
-        pass
+    model_config = ConfigDict(validate_by_name=True, validate_by_alias=True)
 
 
-class Usecase(ABC):
+class Usecase[Params, Response](ABC):
     @abstractmethod
-    def execute(self, *args: Optional[Any]) -> Any:
+    def execute(self, params: Params) -> Response:
         """
-            Only public method of a usecase. This method will be called by the presentation layer.
+        Only public method of a usecase. This method will be called by the presentation layer.
         """
-        raise NotImplementedError(NOT_IMPLEMENTED_ERROR)
+        ...

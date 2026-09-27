@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  pull_request:
+    branches: ["**"]
+  push:
+    # Here you can specify which branches you want to run the workflow
+    branches: ["main"]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run --locked ruff check .
+      - run: uv run --locked ruff format --check .
+
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+
+      - name: Tests + Coverage
+        run: uv run --locked pytest --cov --cov-report=xml --cov-report=term
+
+      - name: Coverage comment on PR
+        if: github.event_name == 'pull_request'
+        uses: py-cov-action/python-coverage-comment-action@v3
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MINIMUM_GREEN: 80
+          MINIMUM_ORANGE: 70
+
+      - name: Type check
+        run: uv run --locked mypy app
+
+      - name: Security scan
+        run: uv run --locked bandit -r app -ll
+
+      - name: Dead code check (vulture)
+        run: |
+          uv run --locked vulture app --min-confidence 80 > /tmp/vulture.txt 2>&1 || true
+          if [ -s /tmp/vulture.txt ]; then
+            echo "### ⚠️ Vulture — Dead code detected" >> /tmp/quality_summary.md
+            echo '```' >> /tmp/quality_summary.md
+            cat /tmp/vulture.txt >> /tmp/quality_summary.md
+            echo '```' >> /tmp/quality_summary.md
+          else
+            echo "### ✅ Vulture — No dead code detected" >> /tmp/quality_summary.md
+          fi
+
+      - name: Complexity check (xenon)
+        run: |
+          EXIT=0
+          uv run --locked xenon app --max-absolute B --max-modules A --max-average A > /tmp/xenon.txt 2>&1 || EXIT=$?
+          if [ $EXIT -ne 0 ]; then
+            echo "### ⚠️ Xenon — Complexity above threshold" >> /tmp/quality_summary.md
+            echo '```' >> /tmp/quality_summary.md
+            cat /tmp/xenon.txt >> /tmp/quality_summary.md
+            echo '```' >> /tmp/quality_summary.md
+          else
+            echo "### ✅ Xenon — Complexity within threshold" >> /tmp/quality_summary.md
+          fi
+          exit $EXIT
+
+      - name: Dependency vulnerability scan
+        run: uv run --locked pip-audit
+
+      - name: Post quality summary on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            let summary = '';
+            try {
+              summary = fs.readFileSync('/tmp/quality_summary.md', 'utf8');
+            } catch (e) {
+              summary = 'No results available.';
+            }
+            const body = `<!-- quality-report -->\n## 🔍 Quality Report\n\n${summary}`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c => c.body.includes('<!-- quality-report -->'));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

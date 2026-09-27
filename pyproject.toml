@@ -3,43 +3,67 @@ name = "py-awesome-template"
 description = ""
 authors = []
 version = "1.0.0"
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 # Change project dependencies here
 dependencies = [
-    "python-dotenv==1.0.0",
-    "fastapi==0.108.0",
-    "uvicorn==0.25.0",
-    "pydantic==2.5.3",
-]
-
-# Change project dev dependencies here
-[dependency-groups]
-dev = [
-    # Code styles libs
-    "pylint==3.0.3",
-    "autopep8==2.0.4",
-    "isort==5.13.2",
-    "flake8==6.1.0",
-    # Test libs
-    "pytest==7.4.4",
-    "pytest-cov==4.1.0",
-    "pytest-mock==3.12.0",
-    "Faker==22.0.0",
-    "coverage==7.4.0",
+    "fastapi>=0.141.1",
+    "pydantic>=2.13.5",
+    "python-dotenv>=1.2.3",
+    "uvicorn[standard]>=0.54.0",
 ]
 
 [project.urls]
 "Homepage" = "https://github.com/mathmed/py-awesome-template"
 
-[tool.autopep8]
-max_line_length = 120
-in-place = true
-recursive = true
-ignore = []
+[dependency-groups]
+dev = [
+    "bandit>=1.9.4",
+    "faker>=40.39.0",
+    "httpx2>=2.13.1",
+    "mypy>=2.3.1",
+    "pip-audit>=2.10.1",
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "pytest-mock>=3.16.0",
+    "ruff>=0.16.9",
+    "vulture>=2.16",
+    "xenon>=0.9.3",
+]
 
-[tool.isort]
-profile = "black"
-line_length = 120
+[tool.pytest.ini_options]
+testpaths = ["app"]
+python_files = ["*_test.py", "test_*.py"]
+asyncio_mode = "auto"
+addopts = "--import-mode=importlib"
 
-[tool.pylint]
-disable = ["missing-module-docstring", "missing-function-docstring", "missing-class-docstring"]
+[tool.coverage.run]
+source = ["app"]
+relative_files = true
+omit = ["*/__init__.py", "*_test.py"]
+
+[tool.coverage.report]
+fail_under = 80
+
+[tool.mypy]
+python_version = "3.14"
+ignore_missing_imports = true
+warn_unused_ignores = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501", "B008"]
+
+[tool.vulture]
+min_confidence = 80
+paths = ["app"]
+
+[tool.xenon]
+max-absolute = "B"
+max-modules = "A"
+max-average = "A"

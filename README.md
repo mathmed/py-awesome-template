@@ -1,14 +1,18 @@
 # py-awesome-template
 
-Kickstart your Python Python 3.x project with Clean Architecture. This robust template embraces the principles of Clean Architecture. This template not only provides a well-organized folder structure but also comes pre-configured with essential tools and settings, including code styling, continuous integration and Docker support.
+Kickstart your Python 3.14 project with Clean Architecture. This robust template embraces the principles of Clean Architecture. This template not only provides a well-organized folder structure but also comes pre-configured with essential tools and settings, including code styling, continuous integration and Docker support.
 
 ## Features
 
 - Clean Architecture Structure: The project template follows [Uncle Bob's Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html) principles. The clear separation of layers ensures maintainability, testability, and scalability.
 
-- Code Styles Pre-configuration: We've set up pylint, autopep8, flake8, and isort to help you maintain consistent and clean code.
+- Code Quality Tooling: [ruff](https://docs.astral.sh/ruff/) (lint + format), [mypy](https://mypy-lang.org/) (type check), [bandit](https://bandit.readthedocs.io/) (security), [vulture](https://github.com/jendrikseipp/vulture) (dead code), [xenon](https://github.com/rubik/xenon) (cyclomatic complexity) and [pip-audit](https://github.com/pypa/pip-audit) (dependency vulnerabilities), all wired into [pre-commit](https://pre-commit.com/) hooks.
 
-- Continuous Integration (GitHub Actions): A robust CI pipeline is ready to check code styles and run unit tests with each push.
+- Test Coverage Gate: pytest with an 80% minimum coverage threshold.
+
+- Continuous Integration (GitHub Actions): Every pull request runs all quality checks and tests, and posts coverage and quality reports as PR comments.
+
+- Dependabot: Weekly grouped updates for Python dependencies and GitHub Actions.
 
 - Docker Support: Easily run your project locally using Docker. No hassle with dependencies; everything is containerized.
 
@@ -16,7 +20,9 @@ Kickstart your Python Python 3.x project with Clean Architecture. This robust te
 
 ### Getting Started
 
-To run the project locally, ensure you have Docker installed. If not, follow the installation [guide here](https://docs.docker.com/engine/install/).
+Run `make setup` to install [uv](https://docs.astral.sh/uv/) (if missing), the project dependencies (uv fetches Python 3.14 if needed), create the `.env` file and install the git hooks.
+
+Then run `make run` to start the server locally, or `make dev` to run it with Docker ([install guide](https://docs.docker.com/engine/install/)).
 
 ### Installing Dependencies
 
@@ -26,25 +32,30 @@ Manage project dependencies in the pyproject.toml file. Dependencies are managed
 
 Use the following commands in the root folder with **make**:
 
-| Command          | Description                                                                                             |
-| ---------------- | ------------------------------------------------------------------------------------------------------- |
-| make dev         | Run the project locally. Docker must be installed.                                                      |
-| make dev-build   | Run the project locally with build. Useful after installing new dependencies. Docker must be installed. |
-| make test        | Run unit tests. Ensure the Docker container is running.                                                 |
-| make check-code  | Verify code syntax and styles (PEP8). Docker container must be running.                                 |
-| make format-code | Format code styles (PEP8). Docker container must be running.                                            |
+| Command          | Description                                                                             |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| make setup       | Install uv, project dependencies and git hooks.                                         |
+| make run         | Run the project locally with uv.                                                        |
+| make dev         | Run the project with Docker.                                                            |
+| make dev-build   | Run the project with Docker, rebuilding the image. Useful after changing the Dockerfile. |
+| make test        | Run unit tests with coverage.                                                           |
+| make hooks       | Run all quality checks (ruff, mypy, bandit, vulture, xenon, pip-audit).                 |
+| make check-code  | Lint and check code formatting with ruff.                                               |
+| make format-code | Fix lint issues and format code with ruff.                                              |
 
 ### Config files
 
-| File                     | Description                                                                                  |
-| ------------------------ | -------------------------------------------------------------------------------------------- |
-| .coveragerc              | Define files for analysis and ignored in test coverage reports.                              |
-| .env.example             | Define environment variables. Create a .env file in the project root based on .env.example.  |
-| .flake8                  | Define flake8 code styles.                                                                   |
-| Makefile                 | Create shortcuts for commands using make.                                                    |
-| pyproject.toml           | Set project details, add dependencies, and define autopep8, pylint and isort configurations. |
-| pytest.ini               | Set pytest configurations.                                                                   |
-| github/workflows/ci.yaml | Github Actions CI configuration file.                                                        |
+| File                      | Description                                                                                          |
+| ------------------------- | ---------------------------------------------------------------------------------------------------- |
+| .env.example              | Define environment variables. Create a .env file in the project root based on .env.example.          |
+| .python-version           | Python version used by uv.                                                                           |
+| .pre-commit-config.yaml   | Git hooks running all quality checks before each commit.                                             |
+| .vscode/settings.json     | VS Code settings: ruff as formatter on save and pytest integration.                                  |
+| Makefile                  | Create shortcuts for commands using make.                                                            |
+| pyproject.toml            | Project details, dependencies and ruff, mypy, pytest, coverage, vulture and xenon configurations.    |
+| uv.lock                   | Locked dependency versions. Commit it.                                                               |
+| .github/workflows/ci.yml  | GitHub Actions CI configuration file.                                                                |
+| .github/dependabot.yaml   | Dependabot configuration for dependency updates.                                                     |
 
 ## Architecture and Folder Structure
 
