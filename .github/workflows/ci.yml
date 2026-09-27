@@ -9,8 +9,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
-  issues: write
 
 jobs:
   lint:
@@ -26,6 +24,12 @@ jobs:
 
   quality:
     runs-on: ubuntu-latest
+    permissions:
+      # write: on push to main, the coverage action publishes the README badge to the
+      # python-coverage-comment-action-data branch
+      contents: write
+      pull-requests: write
+      issues: write
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
@@ -36,8 +40,8 @@ jobs:
       - name: Tests + Coverage
         run: uv run --locked pytest --cov --cov-report=xml --cov-report=term
 
-      - name: Coverage comment on PR
-        if: github.event_name == 'pull_request'
+      # On PRs: posts the coverage comment. On push to main: updates the coverage badge
+      - name: Coverage report
         uses: py-cov-action/python-coverage-comment-action@v3
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

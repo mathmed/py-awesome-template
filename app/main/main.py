@@ -1,5 +1,5 @@
-from app.domain.common.envs.settings import get_settings
-from app.main.logger import configure_logging
+from app.common.logger import configure_logging
+from app.common.settings import get_settings
 from app.presentation.fastapi.configs.configs import make_fastapi_app
 
 settings = get_settings()

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pytest import fixture, mark
 
-from app.domain.common.errors.domain_errors import (
+from app.domain.errors.domain_errors import (
     ConflictError,
     DomainError,
     NotFoundError,

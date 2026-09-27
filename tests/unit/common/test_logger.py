@@ -2,8 +2,8 @@ import json
 import logging
 import sys
 
-from app.domain.common.envs.settings import Environment, Settings
-from app.main.logger import JsonFormatter, configure_logging
+from app.common.logger import JsonFormatter, configure_logging
+from app.common.settings import Environment, Settings
 
 
 def make_record(exc_info: bool = False) -> logging.LogRecord:
