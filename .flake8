@@ -2,6 +2,7 @@
 max-line-length = 120
 exclude =
     .git,
+    .venv,
     __pycache__,
     __init__.py,
     main.py

@@ -14,23 +14,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.10"
-          cache: "pip"
+          enable-cache: true
 
       - name: Install dependencies
-        run: python -m pip install --upgrade pip && pip install poetry && poetry install
+        run: uv sync --locked
 
       - name: Check code - Flake8
-        run: poetry run flake8 .;
+        run: uv run flake8 .;
 
       - name: Check code - Pylint
-        run: poetry run pylint app/ --disable=all --enable=e,f;
+        run: uv run pylint app/ --disable=all --enable=e,f;
 
       - name: Check code - Isort
-        run: poetry run isort --check-only ./app
+        run: uv run isort --check-only ./app
 
       - name: Test Coverage with Pytest
-        run: ENV='test' poetry run pytest --cov-config=.coveragerc --cov-report=term-missing --doctest-modules --cov=. app/
+        run: ENV='test' uv run pytest --cov-config=.coveragerc --cov-report=term-missing --doctest-modules --cov=. app/
 

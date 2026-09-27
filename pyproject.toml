@@ -1,30 +1,32 @@
-[tool.poetry]
+[project]
 name = "py-awesome-template"
 description = ""
 authors = []
 version = "1.0.0"
-
+requires-python = ">=3.10"
 # Change project dependencies here
-[tool.poetry.dependencies]
-python="^3.10"
-python-dotenv="1.0.0"
-fastapi="0.108.0"
-uvicorn="0.25.0"
-pydantic="2.5.3"
+dependencies = [
+    "python-dotenv==1.0.0",
+    "fastapi==0.108.0",
+    "uvicorn==0.25.0",
+    "pydantic==2.5.3",
+]
 
 # Change project dev dependencies here
-[tool.poetry.group.test.dependencies]
-# Code styles libs
-pylint="3.0.3"
-autopep8="2.0.4"
-isort="5.13.2"
-flake8="6.1.0"
-# Test libs
-pytest="7.4.4"
-pytest-cov="4.1.0"
-pytest-mock="3.12.0"
-Faker="22.0.0"
-coverage="7.4.0"
+[dependency-groups]
+dev = [
+    # Code styles libs
+    "pylint==3.0.3",
+    "autopep8==2.0.4",
+    "isort==5.13.2",
+    "flake8==6.1.0",
+    # Test libs
+    "pytest==7.4.4",
+    "pytest-cov==4.1.0",
+    "pytest-mock==3.12.0",
+    "Faker==22.0.0",
+    "coverage==7.4.0",
+]
 
 [project.urls]
 "Homepage" = "https://github.com/mathmed/py-awesome-template"

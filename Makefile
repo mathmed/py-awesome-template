@@ -8,12 +8,12 @@ dev-build:
 
 # Run unit tests in docker container
 test:
-	docker exec -it py-awesome-template sh -c "cd /home/app && poetry run pytest --cov-config=.coveragerc --cov-report html --cov=. app/"
+	docker exec -it py-awesome-template sh -c "cd /home/app && uv run pytest --cov-config=.coveragerc --cov-report html --cov=. app/"
 
 # Verify if styles (PEP8) is correct
 check-code:
-	docker exec -it py-awesome-template sh -c "cd /home/app && poetry run flake8 .; poetry run pylint app/ --disable=all --enable=e,f; poetry run isort --check-only ./app"
+	docker exec -it py-awesome-template sh -c "cd /home/app && uv run flake8 .; uv run pylint app/ --disable=all --enable=e,f; uv run isort --check-only ./app"
 
 # Format code to PEP8
 format-code:
-	docker exec -it py-awesome-template sh -c "cd /home/app && poetry run autopep8 --exclude="main.py" .; poetry run isort ." && sudo chown -R $(id -u):$(id -g) .
+	docker exec -it py-awesome-template sh -c "cd /home/app && uv run autopep8 --exclude="main.py" .; uv run isort ." && sudo chown -R $(id -u):$(id -g) .

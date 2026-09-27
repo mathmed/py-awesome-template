@@ -20,7 +20,7 @@ To run the project locally, ensure you have Docker installed. If not, follow the
 
 ### Installing Dependencies
 
-Manage project dependencies in the pyproject.toml file. Use `tool.poetry.dependencies` for production dependencies and `tool.poetry.group.test.dependencies` for test and development dependencies.
+Manage project dependencies in the pyproject.toml file. Dependencies are managed with [uv](https://docs.astral.sh/uv/). Use `uv add <package>` for production dependencies (`project.dependencies`) and `uv add --dev <package>` for test and development dependencies (`dependency-groups.dev`). Commit the generated `uv.lock` file.
 
 ### Available commands
 
