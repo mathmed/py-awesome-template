@@ -5,11 +5,13 @@ from app.domain.errors.domain_errors import (
     ConflictError,
     DomainError,
     NotFoundError,
+    ServiceUnavailableError,
 )
 
 STATUS_BY_ERROR: dict[type[DomainError], int] = {
     NotFoundError: status.HTTP_404_NOT_FOUND,
     ConflictError: status.HTTP_409_CONFLICT,
+    ServiceUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
 }
 
 

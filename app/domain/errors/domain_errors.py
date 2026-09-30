@@ -10,3 +10,7 @@ class NotFoundError(DomainError):
 
 class ConflictError(DomainError):
     pass
+
+
+class ServiceUnavailableError(DomainError):
+    pass
