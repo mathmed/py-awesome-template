@@ -1,5 +1,6 @@
 import argparse
 import fnmatch
+import json
 import os
 import re
 import subprocess
@@ -11,6 +12,8 @@ from pathlib import Path
 
 DEFAULT_MIN_SCORE = 90.0
 MIN_SCORE_ENV = "MUTATION_MIN_SCORE"
+# Machine-readable line read by scripts/quality_report.py (keep the prefix in sync)
+RESULT_PREFIX = "MUTATION_RESULT: "
 RESULT_LINE = re.compile(r"^\s*(?P<name>\S+): (?P<status>.+?)\s*$")
 MUTANT_NAME = re.compile(r"^(?P<module>.+)\.x(?P<function>[^.]+)__mutmut_\d+$")
 
@@ -82,6 +85,26 @@ class MutationReport:
     @property
     def passed(self) -> bool:
         return self.score >= self.min_score
+
+    def to_result_line(self) -> str:
+        return RESULT_PREFIX + json.dumps(
+            {
+                "skipped": False,
+                "score": self.score,
+                "min_score": self.min_score,
+                "killed": self.killed,
+                "total": self.total,
+                "survivors": [
+                    {
+                        "file": item.file,
+                        "function": item.function,
+                        "status": item.status.value,
+                        "name": item.name,
+                    }
+                    for item in self.survivors
+                ],
+            }
+        )
 
     def to_markdown(self) -> str:
         verdict = "✅ passed" if self.passed else "❌ failed"
@@ -166,6 +189,19 @@ def publish(markdown: str) -> None:
             handle.write(markdown)
 
 
+def skipped_result_line(min_score: float) -> str:
+    return RESULT_PREFIX + json.dumps(
+        {
+            "skipped": True,
+            "score": 100.0,
+            "min_score": min_score,
+            "killed": 0,
+            "total": 0,
+            "survivors": [],
+        }
+    )
+
+
 def min_score() -> float:
     return float(os.environ.get(MIN_SCORE_ENV, DEFAULT_MIN_SCORE))
 
@@ -173,6 +209,7 @@ def min_score() -> float:
 def report_command(targets: list[str]) -> int:
     report = MutationReport(read_results(targets), min_score())
     publish(report.to_markdown())
+    print(report.to_result_line())
     return 0 if report.passed else 1
 
 
@@ -181,6 +218,7 @@ def changed_command(base_ref: str) -> int:
     if not targets:
         message = "## Mutation testing\n\nNo domain files changed, nothing to mutate.\n"
         publish(message)
+        print(skipped_result_line(min_score()))
         return 0
     print("Mutating:", *targets, sep="\n  ", flush=True)
     subprocess.run(["mutmut", "run", *targets], check=True)

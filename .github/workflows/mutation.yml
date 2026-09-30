@@ -4,7 +4,8 @@ name: Mutation testing
 # mutate the whole scope as a safety net. Tune the gate with the repository variable
 # MUTATION_MIN_SCORE (Settings > Secrets and variables > Actions > Variables); default 90.
 on:
-  pull_request:
+  # Called by ci.yml on pull requests, so that the result is part of the Quality Report
+  workflow_call:
   schedule:
     - cron: "0 6 * * 1"
   workflow_dispatch:
@@ -41,7 +42,17 @@ jobs:
           key: mutants-${{ runner.os }}-${{ hashFiles('app/domain/**', 'tests/**', 'pyproject.toml', 'uv.lock') }}
 
       - name: Mutate changed domain files
-        run: uv run --locked python scripts/mutation.py changed --base "origin/${{ github.base_ref }}"
+        run: >-
+          uv run --locked python scripts/quality_report.py run mutation --
+          python scripts/mutation.py changed --base "origin/${{ github.base_ref }}"
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: quality-fragment-mutation
+          path: quality-fragments/
+          if-no-files-found: ignore
+          retention-days: 7
 
   mutation-full:
     if: github.event_name != 'pull_request'

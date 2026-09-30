@@ -41,6 +41,15 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# EPOCHREALTIME needs bash 5; older bash (macOS) falls back to whole seconds
+now_us() {
+  if [ -n "${EPOCHREALTIME:-}" ]; then
+    echo "${EPOCHREALTIME/[.,]/}"
+    return
+  fi
+  echo $((SECONDS * 1000000))
+}
+
 fail() {
   echo ">> smoke: $*" >&2
   exit 1
@@ -72,6 +81,7 @@ echo ">> starting the API on ${BASE_URL} (ENV=${ENV})"
 setsid uv run --no-dev uvicorn app.main.main:app --host 127.0.0.1 --port "$PORT" >"$LOG_FILE" 2>&1 &
 API_PID=$!
 
+BOOT_STARTED_US="$(now_us)"
 echo ">> waiting for /health (up to ${TIMEOUT}s)"
 deadline=$((SECONDS + TIMEOUT))
 until curl --silent --fail --output /dev/null "${BASE_URL}/health"; do
@@ -79,6 +89,9 @@ until curl --silent --fail --output /dev/null "${BASE_URL}/health"; do
   [ "$SECONDS" -lt "$deadline" ] || fail "the API did not become healthy within ${TIMEOUT}s"
   sleep 0.5
 done
+
+boot_ms=$((($(now_us) - BOOT_STARTED_US) / 1000))
+printf '>> API healthy after %d.%03ds\n' $((boot_ms / 1000)) $((boot_ms % 1000))
 
 check_endpoint() {
   local path="$1" body

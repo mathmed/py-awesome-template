@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -140,3 +141,33 @@ class TestCommands:
         assert mutation.min_score() == mutation.DEFAULT_MIN_SCORE
         monkeypatch.setenv("MUTATION_MIN_SCORE", "80.5")
         assert mutation.min_score() == 80.5
+
+
+class TestResultLine:
+    def test_should_emit_machine_readable_result_with_survivors(self) -> None:
+        results = [
+            MutantResult(CREATE, MutantStatus.KILLED),
+            MutantResult(CREATE.replace("_1", "_2"), MutantStatus.SURVIVED),
+        ]
+        sut = MutationReport(results, min_score=90)
+
+        line = sut.to_result_line()
+
+        assert line.startswith(mutation.RESULT_PREFIX)
+        payload = json.loads(line.removeprefix(mutation.RESULT_PREFIX))
+        assert payload["skipped"] is False
+        assert payload["score"] == 50.0
+        assert payload["survivors"][0]["function"] == "CreateExampleUsecase.execute"
+
+    def test_should_emit_skipped_result_when_no_domain_file_changed(
+        self, mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        mocker.patch.object(mutation, "changed_files", return_value=["README.md"])
+        mocker.patch.object(mutation, "load_scope", return_value=MutationScope(["app/domain"], []))
+
+        mutation.changed_command("origin/main")
+
+        line = next(
+            line for line in capsys.readouterr().out.splitlines() if "MUTATION_RESULT" in line
+        )
+        assert json.loads(line.removeprefix(mutation.RESULT_PREFIX))["skipped"] is True

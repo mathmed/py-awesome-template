@@ -166,3 +166,7 @@ cython_debug/
 .claude/settings.local.json
 .local_dev
 mutants/
+
+# Quality report fragments (scripts/quality_report.py)
+quality-fragments/
+quality-report.md
