@@ -12,11 +12,12 @@ A production-ready starting point for Python 3.14 APIs with FastAPI: a layered f
 ## Features
 
 - **Layered structure**: domain, infra and presentation layers, with the domain isolated from frameworks through contracts.
-- **Quality tooling**: ruff (lint + format), mypy (types), bandit (security), vulture (dead code), xenon (complexity) and pip-audit (vulnerable dependencies), all in [pre-commit](https://pre-commit.com/) hooks.
+- **Quality tooling**: ruff (lint + format), mypy (types), bandit (security), vulture (dead code), xenon (complexity), import-linter (architecture contracts) and pip-audit (vulnerable dependencies), all in [pre-commit](https://pre-commit.com/) hooks.
 - **Tests**: pytest with unit and integration suites and an 80% coverage gate.
 - **CI**: every pull request runs all checks and posts coverage and quality reports as comments.
 - **Dependabot**: weekly grouped updates for Python dependencies and GitHub Actions.
-- **Production basics**: typed settings ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)), JSON logs in production, configurable CORS, domain errors mapped to HTTP status codes and a `/health` route.
+- **Production basics**: typed settings ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)), JSON logs in production, configurable CORS, domain errors mapped to HTTP status codes and `/health` (liveness) and `/ready` (readiness) routes.
+- **Deterministic validation for AI-generated code**: a boot smoke test, architecture contracts and mutation testing (see [Validation layers](#validation-layers)).
 - **Docker**: a `dev` stage with hot reload and a slim, non-root `production` stage with healthcheck.
 - **AI-ready**: `CLAUDE.md`/`AGENTS.md` with the project rules, Claude Code agents (`coder`, `reviewer`), permissions and a hook that formats every file the agent edits.
 
@@ -31,6 +32,7 @@ Or run it with Docker: `make dev` (the port is `APP_PORT` from `.env`).
 
 ```sh
 curl http://localhost:8000/health
+curl http://localhost:8000/ready
 curl "http://localhost:8000/example?field1=hello"
 ```
 
@@ -44,7 +46,10 @@ curl "http://localhost:8000/example?field1=hello"
 | `make build`       | Build the production Docker image.                                      |
 | `make test`        | Run all tests with coverage.                                            |
 | `make test-unit`   | Run only the unit tests.                                                |
-| `make hooks`       | Run all quality checks (ruff, mypy, bandit, vulture, xenon, pip-audit). |
+| `make hooks`       | Run all quality checks (ruff, mypy, bandit, vulture, xenon, import-linter, pip-audit). |
+| `make smoke`       | Boot the real API and call `/health` and `/ready`.                      |
+| `make lint-imports` | Check the architecture contracts (import-linter).                      |
+| `make mutation`    | Mutation testing of the domain (slow); `make mutation-results` lists survivors. |
 | `make check-code`  | Lint and check formatting with ruff.                                    |
 | `make format-code` | Fix lint issues and format the code with ruff.                          |
 
@@ -62,6 +67,55 @@ Loaded from the environment or the `.env` file by `app/common/settings.py`. New 
 | `ENV`          | `development` | `development`, `test` or `production`. Production logs JSON.    |
 | `LOG_LEVEL`    | `INFO`        | Python logging level.                                           |
 | `CORS_ORIGINS` | `[]`          | JSON list of allowed origins, e.g. `["http://localhost:3000"]`. |
+
+## Validation layers
+
+Tests written by an AI agent can pass and still prove little. Three deterministic layers catch what line coverage does not.
+
+### Boot smoke test (`make smoke`)
+
+`scripts/smoke.sh` boots the API for real (uvicorn, `ENV=production`, environment loaded from `.env.example`), waits for `/health` with a timeout, then calls `/health` (liveness: touches no dependency) and `/ready` (readiness: runs the checks of every real dependency, returns `503` if any is down). On failure it prints the API logs; on exit it always stops everything. It runs in CI as the `smoke` job and blocks the PR.
+
+The template has no database, so `/ready` reports `{"status": "ready", "dependencies": []}`. To adapt it to your project:
+
+1. **Add a dependency check**: implement `ReadinessCheckContract` in `app/infra/` (e.g. a `SELECT 1` on Postgres, catching the driver's specific exceptions and returning `False`) and register it in `app/presentation/factories/check_readiness_factory.py`.
+2. **Start the dependencies**: create a compose file with them (e.g. `docker/docker-compose.smoke.yaml` with a Postgres and a `healthcheck`) and run `SMOKE_COMPOSE_FILE=docker/docker-compose.smoke.yaml make smoke`. Make it the default in the script if you want. In CI, use `services:` in the `smoke` job (an example is commented in `ci.yml`).
+3. **Run migrations on an empty database**: set `SMOKE_MIGRATE_COMMAND`, e.g. `uv run --no-dev alembic upgrade head`.
+4. **Point the app at the dependencies**: put the variables (e.g. `DATABASE_URL`) in `.env.example`; the smoke test boots with exactly that file (`SMOKE_ENV_FILE` picks another one), so no test-only environment hides a broken configuration.
+
+Other options: `SMOKE_PORT` (default `18000`), `SMOKE_TIMEOUT` (default `30` seconds) and `SMOKE_ENV` (default `production`).
+
+### Architecture contracts (`make lint-imports`)
+
+[import-linter](https://import-linter.readthedocs.io/) contracts in `pyproject.toml` (`[tool.importlinter]`) mirror the architecture rules: layers (`main > presentation > infra > domain`), the domain not importing `infra`, `presentation`, `common`, `main` or web/ORM/HTTP frameworks, layers inside the domain, and independence between use case features and between infra integrations. It runs as a pre-commit hook, in `make hooks` and as the `lint-imports` CI job.
+
+To add a contract, append a block to `pyproject.toml` and run `make lint-imports`:
+
+```toml
+[[tool.importlinter.contracts]]
+name = "Billing does not depend on shipping"
+type = "forbidden"            # or "layers" / "independence"
+source_modules = ["app.domain.usecases.billing"]
+forbidden_modules = ["app.domain.usecases.shipping"]
+```
+
+When a contract breaks, fix the import. Only relax a contract (or add `ignore_imports`) as a deliberate architecture decision, never to make a check pass.
+
+### Mutation testing (`make mutation`)
+
+[mutmut](https://mutmut.readthedocs.io/) changes the domain code (flips a `>` into `>=`, drops an argument, negates a condition...) and runs the tests against each change. A test suite that still passes has a **surviving mutant**: that line is executed but its behaviour is not asserted. Coverage says the line ran; mutation testing says whether a test would notice if it were wrong.
+
+The scope is `app/domain` (use cases and business rules, `[tool.mutmut]` in `pyproject.toml`); infra, presentation, main and common are covered by integration tests and left out. It is slow, so it does not gate PRs: the `Mutation testing` workflow runs weekly and on demand (`workflow_dispatch`) and writes the result in the run summary.
+
+Reading the result:
+
+```sh
+make mutation           # runs; the summary shows killed (🎉) and survived (🙁) mutants
+make mutation-results   # lists the survivors
+uv run mutmut show <name>   # diff of a surviving mutant: what changed and no test noticed
+```
+
+Score per module = killed ÷ total mutants. For each survivor, either add the missing assertion, or, if the mutant does not change behaviour (an equivalent mutant), leave it. Don't lower the scope to raise the score.
 
 ## Folder structure
 
@@ -114,10 +168,12 @@ Create an empty `.local_dev` file at the root to work directly on your local bra
 
 | File                         | Description                                                             |
 | ---------------------------- | ----------------------------------------------------------------------- |
-| `pyproject.toml`             | Dependencies and ruff, mypy, pytest, coverage, vulture and xenon config. |
+| `pyproject.toml`             | Dependencies and ruff, mypy, pytest, coverage, vulture, xenon, import-linter and mutmut config. |
 | `uv.lock`                    | Locked dependency versions.                                             |
 | `.python-version`            | Python version used by uv.                                              |
 | `.pre-commit-config.yaml`    | Git hooks running all quality checks.                                   |
+| `scripts/smoke.sh`           | Boot smoke test (`make smoke`).                                         |
+| `.github/workflows/mutation.yml` | Weekly / on-demand mutation testing.                                |
 | `.env.example`               | Environment variables template.                                         |
 | `.github/workflows/ci.yml`   | CI pipeline.                                                            |
 | `.github/dependabot.yaml`    | Dependency updates.                                                     |

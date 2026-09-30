@@ -15,7 +15,10 @@ make setup        # install uv, dependencies and git hooks
 make run          # run the API locally with hot reload
 make test         # all tests with coverage (fails under 80%)
 make test-unit    # only the fast unit tests
-make hooks        # all quality checks: ruff, mypy, bandit, vulture, xenon, pip-audit
+make hooks        # all quality checks: ruff, mypy, bandit, vulture, xenon, import-linter, pip-audit
+make smoke        # boots the real API and calls /health and /ready
+make lint-imports # architecture contracts (import-linter)
+make mutation     # mutation testing of the domain (slow; not part of the PR checklist)
 make format-code  # fix lint issues and format with ruff
 ```
 
@@ -49,9 +52,20 @@ tests/integration/ HTTP tests with TestClient
 
 1. The app imports: `uv run python -c "import app.main.main"`.
 2. New environment variables have a default or an entry in `.env.example`.
-3. `make hooks` and `make test` pass. A PR with failing checks is not a PR.
+3. `make hooks`, `make test`, `make lint-imports` and `make smoke` pass. A PR with failing checks is not a PR.
 4. Existing routes are not removed or renamed unless the task asks for it.
 5. The README is updated if the change affects setup, commands, routes, env vars or architecture.
+
+## Deterministic validation
+
+- `make lint-imports` enforces the architecture rules above as import-linter contracts in
+  `pyproject.toml` (`[tool.importlinter]`). If it fails, fix the import, not the contract. Never relax,
+  remove or add an `ignore_imports` to a contract without the user's explicit approval.
+- `make smoke` boots the API for real and calls `/health` (liveness, touches no dependency) and `/ready`
+  (readiness, touches the real dependencies). A new infra dependency needs a `ReadinessCheckContract`
+  implementation registered in `check_readiness_factory`.
+- `make mutation` (weekly in CI) shows tests that pass without checking anything. Do not weaken or delete
+  tests to improve the score; a surviving mutant means a missing assertion.
 
 ## Workflow
 
