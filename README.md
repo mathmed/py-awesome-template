@@ -134,13 +134,13 @@ Every pull request gets **one** comment (marker `<!-- quality-report -->`, updat
 | Section | Tool | Job | What the section shows |
 | --- | --- | --- | --- |
 | Lint/format | ruff check + format | `lint` | problem / file count; output on failure |
-| Tipos | mypy (strict) | `types` | files checked or error count |
-| Segurança | bandit + pip-audit | `security` | issues and vulnerable dependencies |
+| Types | mypy (strict) | `types` | files checked or error count |
+| Security | bandit + pip-audit | `security` | issues and vulnerable dependencies |
 | Dead code | vulture | `dead-code` | items found (⚠️, advisory: does not block) |
-| Complexidade | xenon | `complexity` | blocks above the threshold |
-| Testes e cobertura | pytest + coverage | `tests` | passed/failed/total, coverage vs. minimum |
-| Arquitetura | import-linter | `lint-imports` | contracts kept/broken; broken contract and violating import |
-| Smoke de boot | `scripts/smoke.sh` | `smoke` | booted?, `/health` and `/ready`, time to healthy; API logs only on failure |
+| Complexity | xenon | `complexity` | blocks above the threshold |
+| Tests and coverage | pytest + coverage | `tests` | passed/failed/total, coverage vs. minimum |
+| Architecture | import-linter | `lint-imports` | contracts kept/broken; broken contract and violating import |
+| Boot smoke | `scripts/smoke.sh` | `smoke` | booted?, `/health` and `/ready`, time to healthy; API logs only on failure |
 | Mutation testing | mutmut (`mutation.yml`) | `mutation` | score vs. threshold, killed/survivors, survivors by file/function |
 
 **How it works.** Each analysis job runs its tool through `scripts/quality_report.py run <analysis> -- <command>`. The wrapper streams the output, returns the tool's own exit code (the job is still the gate; the report never decides what blocks) and saves a *fragment* `quality-fragments/<analysis>.json`, which the job uploads as the `quality-fragment-<job>` artifact. The final `quality-report` job (`needs` every analysis, `if: always()`, only on PRs, `pull-requests: write`) downloads the fragments, runs `scripts/quality_report.py render` and upserts the comment. A job that failed, was cancelled or produced no fragment appears as ❌ / ⏭️ instead of breaking the report. The report is also written to the job summary, which is the fallback for PRs from forks, where the token is read-only and posting the comment only emits a warning (this fork path is not validated by the PR that introduced it).

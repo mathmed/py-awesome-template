@@ -102,28 +102,28 @@ class TestPytest:
         finding = analyze_pytest(fragment(Analysis.PYTEST, PYTEST_OK))
 
         assert finding.status == Status.OK
-        assert "34 passaram, 0 falharam, 34 no total" in finding.summary
-        assert "100.00% (mínimo 80.0%)" in finding.summary
+        assert "34 passed, 0 failed, 34 total" in finding.summary
+        assert "100.00% (minimum 80.0%)" in finding.summary
         assert "app/a.py" in finding.details
 
     def test_should_fail_when_coverage_is_below_minimum(self) -> None:
         finding = analyze_pytest(fragment(Analysis.PYTEST, PYTEST_LOW_COVERAGE, 1))
 
         assert finding.status == Status.FAILED
-        assert "abaixo do mínimo" in finding.summary
+        assert "below the minimum" in finding.summary
 
     def test_should_fail_when_a_test_fails(self) -> None:
         finding = analyze_pytest(fragment(Analysis.PYTEST, PYTEST_FAILED, 1))
 
         assert finding.status == Status.FAILED
-        assert "1 falhou" in finding.summary
+        assert "1 failed" in finding.summary
         assert "test_should_x" in finding.details
 
     def test_should_fail_when_pytest_crashes(self) -> None:
         finding = analyze_pytest(fragment(Analysis.PYTEST, "ImportError", 2))
 
         assert finding.status == Status.FAILED
-        assert "antes de concluir" in finding.summary
+        assert "before finishing" in finding.summary
 
 
 class TestImportLinter:
@@ -131,7 +131,7 @@ class TestImportLinter:
         finding = analyze_import_linter(fragment(Analysis.IMPORT_LINTER, IMPORT_LINTER_OK))
 
         assert finding.status == Status.OK
-        assert "2 contratos mantidos" in finding.summary
+        assert "2 contracts kept" in finding.summary
         assert "Domain does not depend on outer layers" in finding.details
 
     def test_should_show_broken_contract_and_violating_import(self) -> None:
@@ -173,7 +173,7 @@ class TestMutation:
         finding = analyze_mutation(fragment(Analysis.MUTATION, output))
 
         assert finding.status == Status.OK
-        assert "score 90.0% (limiar 90.0%)" in finding.summary
+        assert "score 90.0% (threshold 90.0%)" in finding.summary
         assert "| `app/domain/x.py` | `X.run` | survived |" in finding.details
 
     def test_should_fail_below_threshold(self) -> None:
@@ -187,7 +187,7 @@ class TestMutation:
         finding = analyze_mutation(fragment(Analysis.MUTATION, output))
 
         assert finding.status == Status.SKIPPED
-        assert "Nenhum arquivo de domínio alterado" in finding.summary
+        assert "No domain file changed" in finding.summary
 
     def test_should_fail_when_mutmut_crashes_without_result(self) -> None:
         finding = analyze_mutation(fragment(Analysis.MUTATION, "CalledProcessError", 1))
@@ -203,7 +203,7 @@ class TestAdvisoryTools:
         finding = analyze_vulture(advisory)
 
         assert finding.status == Status.WARNING
-        assert "1 item" in finding.summary
+        assert "1 dead code item" in finding.summary
 
     def test_should_be_ok_without_dead_code(self) -> None:
         assert analyze_vulture(fragment(Analysis.VULTURE)).status == Status.OK
@@ -219,12 +219,12 @@ class TestAdvisoryTools:
         finding = analyze_xenon(fragment(Analysis.XENON, output, 1))
 
         assert finding.status == Status.FAILED
-        assert "1 violação" in finding.summary
+        assert "1 complexity violation" in finding.summary
 
     def test_should_count_bandit_issues(self) -> None:
         finding = analyze_bandit(fragment(Analysis.BANDIT, ">> Issue: [B101]\n>> Issue: [B102]", 1))
 
-        assert "2 problemas" in finding.summary
+        assert "2 issues" in finding.summary
 
 
 class TestRender:
@@ -232,7 +232,7 @@ class TestRender:
         report = render(all_ok_fragments(), {})
 
         assert report.startswith(quality_report.MARKER)
-        assert "✅ **Tudo certo**" in report
+        assert "✅ **All good**" in report
         for section in quality_report.SECTIONS:
             assert f"| {section.title} | ✅ |" in report
 
@@ -248,8 +248,8 @@ class TestRender:
 
         report = render(fragments, {"types": "failure"})
 
-        assert "❌ **Reprovado**: 1 análise falhou" in report
-        assert "Job `types` terminou como `failure` sem produzir resultado" in report
+        assert "❌ **Failed**: 1 analysis failed" in report
+        assert "Job `types` ended as `failure` without producing a result" in report
 
     @pytest.mark.parametrize("result", ["cancelled", "skipped"])
     def test_should_mark_missing_fragment_of_cancelled_job_as_skipped(self, result: str) -> None:
@@ -258,8 +258,8 @@ class TestRender:
 
         report = render(fragments, {"smoke": result})
 
-        assert "| Smoke de boot (/health e /ready) | ⏭️ |" in report
-        assert "✅ **Tudo certo** (1 análise não executada)" in report
+        assert "| Boot smoke (/health and /ready) | ⏭️ |" in report
+        assert "✅ **All good** (1 analysis not run)" in report
 
     def test_should_take_the_worst_status_in_multi_analysis_sections(self) -> None:
         fragments = all_ok_fragments()
@@ -269,9 +269,9 @@ class TestRender:
 
         report = render(fragments, {})
 
-        assert "### ❌ Segurança (bandit + pip-audit)" in report
-        assert "- ✅ **bandit**: Nenhum problema de segurança" in report
-        assert "- ❌ **pip-audit**: 2 vulnerabilidades" in report
+        assert "### ❌ Security (bandit + pip-audit)" in report
+        assert "- ✅ **bandit**: No security issues" in report
+        assert "- ❌ **pip-audit**: 2 vulnerabilities" in report
 
     def test_should_wrap_long_output_in_collapsible_details(self) -> None:
         fragments = all_ok_fragments()
@@ -279,7 +279,7 @@ class TestRender:
 
         report = render(fragments, {})
 
-        assert "<details><summary>Saída</summary>" in report
+        assert "<details><summary>Output</summary>" in report
         assert "[...truncado...]" in report
         assert len(report) < 30000
 
@@ -338,7 +338,7 @@ class TestLoading:
 
         assert quality_report.parse_job_results(needs) == {
             "lint": "success",
-            "smoke": "desconhecido",
+            "smoke": "unknown",
         }
         assert quality_report.parse_job_results("") == {}
 
@@ -354,9 +354,7 @@ class TestLoading:
 
         footer = quality_report.footer_from_environment()
 
-        assert (
-            footer == "commit `abcdef0` · [execução do CI](https://github.com/o/r/actions/runs/42)"
-        )
+        assert footer == "commit `abcdef0` · [CI run](https://github.com/o/r/actions/runs/42)"
 
 
 class TestMain:
@@ -371,7 +369,7 @@ class TestMain:
         )
 
         assert quality_report.main() == 0
-        assert "Sem erros de tipo (3 arquivos)" in output.read_text()
+        assert "No type errors (3 files)" in output.read_text()
 
     def test_should_propagate_command_exit_code(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

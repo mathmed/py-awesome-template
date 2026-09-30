@@ -103,6 +103,7 @@ tests/integration/ HTTP tests with TestClient
 - **Data structures**: always use `BaseModel` or `dataclass` for structured data. Use `dict` only as a last
   resort.
 - **Identifiers**: every identifier (variables, functions, classes, parameters, fields) in English.
+- **Language**: all code, comments, logs, docs and user-facing text (including CI reports) in English.
 - **Class names**: never prefix class names with `_`.
 - **Single responsibility**: each module/class has one reason to change. If a module needs to import from
   two unrelated integrations, extract the dependency to an intermediary.

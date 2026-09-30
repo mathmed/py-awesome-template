@@ -85,7 +85,7 @@ class Finding:
     status: Status
     summary: str
     details: str = ""
-    details_title: str = "Saída"
+    details_title: str = "Output"
 
 
 @dataclass(frozen=True)
@@ -97,13 +97,13 @@ class Section:
 
 SECTIONS = [
     Section("Lint/format (ruff)", "lint", (Analysis.RUFF_CHECK, Analysis.RUFF_FORMAT)),
-    Section("Tipos (mypy)", "types", (Analysis.MYPY,)),
-    Section("Segurança (bandit + pip-audit)", "security", (Analysis.BANDIT, Analysis.PIP_AUDIT)),
+    Section("Types (mypy)", "types", (Analysis.MYPY,)),
+    Section("Security (bandit + pip-audit)", "security", (Analysis.BANDIT, Analysis.PIP_AUDIT)),
     Section("Dead code (vulture)", "dead-code", (Analysis.VULTURE,)),
-    Section("Complexidade (xenon)", "complexity", (Analysis.XENON,)),
-    Section("Testes e cobertura (pytest)", "tests", (Analysis.PYTEST,)),
-    Section("Arquitetura (import-linter)", "lint-imports", (Analysis.IMPORT_LINTER,)),
-    Section("Smoke de boot (/health e /ready)", "smoke", (Analysis.SMOKE,)),
+    Section("Complexity (xenon)", "complexity", (Analysis.XENON,)),
+    Section("Tests and coverage (pytest)", "tests", (Analysis.PYTEST,)),
+    Section("Architecture (import-linter)", "lint-imports", (Analysis.IMPORT_LINTER,)),
+    Section("Boot smoke (/health and /ready)", "smoke", (Analysis.SMOKE,)),
     Section("Mutation testing (mutmut)", "mutation", (Analysis.MUTATION,)),
 ]
 
@@ -137,21 +137,21 @@ def plural(count: int, singular: str, plural_form: str) -> str:
 def analyze_ruff_check(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     if fragment.passed:
-        return Finding(Status.OK, "Nenhum problema de lint")
+        return Finding(Status.OK, "No lint issues")
     count = first_int(r"Found (\d+) error", output)
-    summary = f"{plural(count, 'problema', 'problemas')} de lint" if count else "Lint falhou"
+    summary = f"{plural(count, 'lint issue', 'lint issues')}" if count else "Lint failed"
     return Finding(Status.FAILED, summary, tail(output))
 
 
 def analyze_ruff_format(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     if fragment.passed:
-        return Finding(Status.OK, "Formatação conforme")
+        return Finding(Status.OK, "Formatting is correct")
     count = len(re.findall(r"^Would reformat: ", output, re.MULTILINE))
     summary = (
-        f"{plural(count, 'arquivo fora', 'arquivos fora')} do formato (`make format-code`)"
+        f"{plural(count, 'file', 'files')} need formatting (`make format-code`)"
         if count
-        else "Verificação de formato falhou"
+        else "Format check failed"
     )
     return Finding(Status.FAILED, summary, tail(output))
 
@@ -160,28 +160,28 @@ def analyze_mypy(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     if fragment.passed:
         files = first_int(r"no issues found in (\d+) source file", output)
-        return Finding(Status.OK, f"Sem erros de tipo ({plural(files, 'arquivo', 'arquivos')})")
+        return Finding(Status.OK, f"No type errors ({plural(files, 'file', 'files')})")
     errors = first_int(r"Found (\d+) error", output)
-    summary = f"{plural(errors, 'erro', 'erros')} de tipo" if errors else "mypy falhou"
+    summary = f"{plural(errors, 'type error', 'type errors')}" if errors else "mypy failed"
     return Finding(Status.FAILED, summary, tail(output))
 
 
 def analyze_bandit(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     if fragment.passed:
-        return Finding(Status.OK, "Nenhum problema de segurança")
+        return Finding(Status.OK, "No security issues")
     issues = len(re.findall(r">> Issue:", output))
-    summary = plural(issues, "problema", "problemas") if issues else "bandit falhou"
+    summary = plural(issues, "issue", "issues") if issues else "bandit failed"
     return Finding(Status.FAILED, summary, tail(output))
 
 
 def analyze_pip_audit(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     if fragment.passed:
-        return Finding(Status.OK, "Nenhuma vulnerabilidade conhecida")
+        return Finding(Status.OK, "No known vulnerabilities")
     count = first_int(r"Found (\d+) known vulnerabilit", output)
     summary = (
-        f"{plural(count, 'vulnerabilidade', 'vulnerabilidades')}" if count else "pip-audit falhou"
+        f"{plural(count, 'vulnerability', 'vulnerabilities')}" if count else "pip-audit failed"
     )
     return Finding(Status.FAILED, summary, tail(output))
 
@@ -189,21 +189,23 @@ def analyze_pip_audit(fragment: Fragment) -> Finding:
 def analyze_vulture(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     if fragment.passed and not output:
-        return Finding(Status.OK, "Nenhum dead code detectado")
+        return Finding(Status.OK, "No dead code detected")
     lines = [line for line in output.splitlines() if line.strip()]
     status = Status.WARNING if fragment.advisory else Status.FAILED
-    return Finding(status, f"{plural(len(lines), 'item', 'itens')} de dead code", tail(output))
+    return Finding(
+        status, f"{plural(len(lines), 'dead code item', 'dead code items')}", tail(output)
+    )
 
 
 def analyze_xenon(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     if fragment.passed:
-        return Finding(Status.OK, "Complexidade dentro do limiar")
+        return Finding(Status.OK, "Complexity within the threshold")
     blocks = len(re.findall(r"^ERROR:xenon:", output, re.MULTILINE))
     summary = (
-        f"{plural(blocks, 'violação', 'violações')} de complexidade"
+        f"{plural(blocks, 'complexity violation', 'complexity violations')}"
         if blocks
-        else "Complexidade acima do limiar"
+        else "Complexity above the threshold"
     )
     return Finding(Status.FAILED, summary, tail(output))
 
@@ -234,18 +236,18 @@ def analyze_pytest(fragment: Fragment) -> Finding:
     total = passed + failed + first_int(r"(\d+) skipped", summary_line)
     coverage = re.search(r"Total coverage: ([\d.]+)%", output)
     required = re.search(r"Required test coverage of ([\d.]+)%", output)
-    coverage_text = f"{coverage[1]}%" if coverage else "n/d"
+    coverage_text = f"{coverage[1]}%" if coverage else "n/a"
     if required:
-        coverage_text += f" (mínimo {required[1]}%)"
-    counts = f"{passed} passaram, {plural(failed, 'falhou', 'falharam')}, {total} no total"
+        coverage_text += f" (minimum {required[1]}%)"
+    counts = f"{passed} passed, {failed} failed, {total} total"
     if failed or not summary_line:
-        summary = counts if summary_line else "pytest falhou antes de concluir"
-        return Finding(Status.FAILED, f"{summary} · cobertura {coverage_text}", tail(output))
+        summary = counts if summary_line else "pytest failed before finishing"
+        return Finding(Status.FAILED, f"{summary} · coverage {coverage_text}", tail(output))
     if not fragment.passed:
-        summary = f"{counts} · cobertura abaixo do mínimo: {coverage_text}"
-        return Finding(Status.FAILED, summary, coverage_table(output) or tail(output), "Cobertura")
+        summary = f"{counts} · coverage below the minimum: {coverage_text}"
+        return Finding(Status.FAILED, summary, coverage_table(output) or tail(output), "Coverage")
     return Finding(
-        Status.OK, f"{counts} · cobertura {coverage_text}", coverage_table(output), "Cobertura"
+        Status.OK, f"{counts} · coverage {coverage_text}", coverage_table(output), "Coverage"
     )
 
 
@@ -261,23 +263,19 @@ def analyze_import_linter(fragment: Fragment) -> Finding:
         listing = "\n".join(f"{state:6} {name}" for name, state in contracts)
         return Finding(
             Status.OK,
-            f"{plural(kept, 'contrato mantido', 'contratos mantidos')}",
+            f"{plural(kept, 'contract kept', 'contracts kept')}",
             listing,
-            "Contratos",
+            "Contracts",
         )
     broken_names = [name for name, state in contracts if state == "BROKEN"]
     marker = output.find("Broken contracts")
     violation = output[marker:] if marker >= 0 else output
     if not contracts:
         return Finding(
-            Status.FAILED, "import-linter falhou antes de avaliar os contratos", tail(output)
+            Status.FAILED, "import-linter failed before evaluating the contracts", tail(output)
         )
-    summary = f"{kept} mantidos, {plural(broken, 'quebrado', 'quebrados')}: " + "; ".join(
-        f"**{name}**" for name in broken_names
-    )
-    return Finding(
-        Status.FAILED, summary, tail(violation), "Contrato quebrado e imports que violaram"
-    )
+    summary = f"{kept} kept, {broken} broken: " + "; ".join(f"**{name}**" for name in broken_names)
+    return Finding(Status.FAILED, summary, tail(violation), "Broken contract and violating imports")
 
 
 def analyze_smoke(fragment: Fragment) -> Finding:
@@ -287,16 +285,16 @@ def analyze_smoke(fragment: Fragment) -> Finding:
     seconds = re.search(r">> API healthy after ([\d.]+)s", output)
     endpoints = f"/health {'✅' if health else '❌'} · /ready {'✅' if ready else '❌'}"
     if fragment.passed:
-        boot = f"subiu e ficou pronto em {seconds[1]}s" if seconds else "subiu"
+        boot = f"started and became healthy in {seconds[1]}s" if seconds else "started"
         return Finding(Status.OK, f"API {boot} · {endpoints}")
     reason = re.findall(r"^>> smoke: (.+)$", output, re.MULTILINE)
     started = ">> starting the API" in output
-    boot = "subiu mas falhou" if started else "não chegou a subir"
+    boot = "started but failed" if started else "did not start"
     cause = f": {reason[-1]}" if reason else ""
     logs = output.split(">> smoke FAILED. API logs:", 1)
     details = logs[1].strip() if len(logs) == 2 else output
     return Finding(
-        Status.FAILED, f"API {boot}{cause} · {endpoints}", tail(details), "Logs da API (resumo)"
+        Status.FAILED, f"API {boot}{cause} · {endpoints}", tail(details), "API logs (excerpt)"
     )
 
 
@@ -337,7 +335,7 @@ class MutationOutcome:
 
 def survivors_table(survivors: list[Survivor]) -> str:
     rows = [
-        "| Arquivo | Função | Status |",
+        "| File | Function | Status |",
         "| --- | --- | --- |",
         *(
             f"| `{s.file}` | `{s.function}` | {s.status} |"
@@ -346,7 +344,7 @@ def survivors_table(survivors: list[Survivor]) -> str:
     ]
     hidden = len(survivors) - MAX_SURVIVORS_LISTED
     if hidden > 0:
-        rows.append(f"\n... e mais {hidden}. Rode `make mutation-results` para a lista completa.")
+        rows.append(f"\n... and {hidden} more. Run `make mutation-results` for the full list.")
     return "\n".join(rows)
 
 
@@ -354,17 +352,17 @@ def analyze_mutation(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     outcome = MutationOutcome.parse(output)
     if outcome is None:
-        return Finding(Status.FAILED, "mutmut falhou antes de produzir um score", tail(output))
+        return Finding(Status.FAILED, "mutmut failed before producing a score", tail(output))
     if outcome.skipped:
-        return Finding(Status.SKIPPED, "Nenhum arquivo de domínio alterado, nada a mutar")
+        return Finding(Status.SKIPPED, "No domain file changed, nothing to mutate")
     survivors = len(outcome.survivors)
     summary = (
-        f"score {outcome.score:.1f}% (limiar {outcome.min_score:.1f}%) · "
-        f"{outcome.killed} mortos, {survivors} sobreviventes de {outcome.total}"
+        f"score {outcome.score:.1f}% (threshold {outcome.min_score:.1f}%) · "
+        f"{outcome.killed} killed, {survivors} survived out of {outcome.total}"
     )
     status = Status.OK if outcome.score >= outcome.min_score else Status.FAILED
     details = survivors_table(outcome.survivors) if outcome.survivors else ""
-    return Finding(status, summary, details, "Sobreviventes")
+    return Finding(status, summary, details, "Survivors")
 
 
 ANALYZERS: dict[Analysis, Callable[[Fragment], Finding]] = {
@@ -383,10 +381,10 @@ ANALYZERS: dict[Analysis, Callable[[Fragment], Finding]] = {
 
 
 def missing_finding(job: str, job_results: dict[str, str]) -> Finding:
-    result = job_results.get(job, "desconhecido")
+    result = job_results.get(job, "unknown")
     if result in ("cancelled", "skipped"):
-        return Finding(Status.SKIPPED, f"Job `{job}` {result}: análise não executada")
-    return Finding(Status.FAILED, f"Job `{job}` terminou como `{result}` sem produzir resultado")
+        return Finding(Status.SKIPPED, f"Job `{job}` {result}: analysis not run")
+    return Finding(Status.FAILED, f"Job `{job}` ended as `{result}` without producing a result")
 
 
 def evaluate(
@@ -434,12 +432,14 @@ def verdict(results: list[SectionResult]) -> str:
     failed = sum(r.status == Status.FAILED for r in results)
     warnings = sum(r.status == Status.WARNING for r in results)
     skipped = sum(r.status == Status.SKIPPED for r in results)
-    extra = f" ({plural(skipped, 'análise não executada', 'análises não executadas')})"
+    extra = f" ({plural(skipped, 'analysis not run', 'analyses not run')})"
     if failed:
-        return f"❌ **Reprovado**: {plural(failed, 'análise falhou', 'análises falharam')}"
+        return f"❌ **Failed**: {plural(failed, 'analysis failed', 'analyses failed')}"
     if warnings:
-        return f"⚠️ **Aprovado com avisos**: {plural(warnings, 'análise', 'análises')} com aviso"
-    return "✅ **Tudo certo**" + (extra if skipped else "")
+        return (
+            f"⚠️ **Passed with warnings**: {plural(warnings, 'analysis', 'analyses')} with warnings"
+        )
+    return "✅ **All good**" + (extra if skipped else "")
 
 
 def render(
@@ -449,7 +449,7 @@ def render(
 ) -> str:
     results = [evaluate(section, fragments, job_results) for section in SECTIONS]
     lines = [MARKER, "## 🔍 Quality Report", "", verdict(results), ""]
-    lines += ["| Análise | Status |", "| --- | --- |"]
+    lines += ["| Analysis | Status |", "| --- | --- |"]
     lines += [f"| {r.title} | {r.status} |" for r in results]
     for result in results:
         lines += render_section(result)
@@ -474,7 +474,7 @@ def parse_job_results(needs_json: str) -> dict[str, str]:
     if not needs_json:
         return {}
     needs = json.loads(needs_json)
-    return {job: str(data.get("result", "desconhecido")) for job, data in needs.items()}
+    return {job: str(data.get("result", "unknown")) for job, data in needs.items()}
 
 
 def run_command(analysis: Analysis, command: list[str], directory: Path, advisory: bool) -> int:
@@ -509,7 +509,7 @@ def footer_from_environment() -> str:
     server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
     sha = os.environ.get("QUALITY_REPORT_SHA", os.environ.get("GITHUB_SHA", ""))[:7]
     commit = f"commit `{sha}` · " if sha else ""
-    return f"{commit}[execução do CI]({server}/{repository}/actions/runs/{run_id})"
+    return f"{commit}[CI run]({server}/{repository}/actions/runs/{run_id})"
 
 
 def build_parser() -> argparse.ArgumentParser:
