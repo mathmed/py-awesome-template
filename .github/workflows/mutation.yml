@@ -35,7 +35,7 @@ jobs:
 
       # Exact-match key: mutmut reuses stored results for unchanged source files even when the tests
       # changed, so the key must cover domain code, tests and dependencies. No restore-keys on purpose.
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: mutants
           key: mutants-${{ runner.os }}-${{ hashFiles('app/domain/**', 'tests/**', 'pyproject.toml', 'uv.lock') }}
