@@ -1,4 +1,4 @@
-.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code smoke lint-imports mutation mutation-results
+.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code smoke lint-imports mutation mutation-changed mutation-results
 
 # Install uv (if missing), project dependencies and git hooks
 setup:
@@ -55,9 +55,15 @@ smoke:
 lint-imports:
 	uv run lint-imports
 
-# Mutation testing of the domain (slow, see README); results: make mutation-results
+# Mutation testing of the whole domain (slow, see README); results: make mutation-results
 mutation:
 	uv run mutmut run
+	uv run python scripts/mutation.py report
+
+# Mutation testing only of the domain files changed against BASE (what the PR job runs)
+BASE ?= origin/main
+mutation-changed:
+	uv run python scripts/mutation.py changed --base $(BASE)
 
 mutation-results:
 	uv run mutmut results

@@ -105,12 +105,22 @@ When a contract breaks, fix the import. Only relax a contract (or add `ignore_im
 
 [mutmut](https://mutmut.readthedocs.io/) changes the domain code (flips a `>` into `>=`, drops an argument, negates a condition...) and runs the tests against each change. A test suite that still passes has a **surviving mutant**: that line is executed but its behaviour is not asserted. Coverage says the line ran; mutation testing says whether a test would notice if it were wrong.
 
-The scope is `app/domain` (use cases and business rules, `[tool.mutmut]` in `pyproject.toml`); infra, presentation, main and common are covered by integration tests and left out. It is slow, so it does not gate PRs: the `Mutation testing` workflow runs weekly and on demand (`workflow_dispatch`) and writes the result in the run summary.
+The scope is `app/domain` (use cases and business rules, `[tool.mutmut]` in `pyproject.toml`); infra, presentation, main and common are covered by integration tests and left out. The `Mutation testing` workflow runs:
+
+- **on every PR**, mutating only the domain files changed in the diff (`git diff origin/<base>...HEAD` filtered by `source_paths`/`do_not_mutate`). If the PR touches no domain file, the job ends in seconds with "No domain files changed". It fails when the score of the mutated files is below the minimum;
+- **weekly** (and on demand via `workflow_dispatch`) on the whole scope, as a safety net.
+
+Reading the run: open the job's **Summary** tab. It shows the score, killed vs survived counts and a table of the survivors with file, function and mutant name. Run `uv run mutmut show <mutant>` locally to see the diff.
+
+**Tuning.** The gate is the repository variable `MUTATION_MIN_SCORE` (Settings → Secrets and variables → Actions → Variables; default `90`, locally it is read from the environment). Set it to your project's baseline. The scope is `[tool.mutmut]` in `pyproject.toml` (`source_paths`, `do_not_mutate`); the PR job follows it automatically. Only changes to files in scope trigger mutation; test-only changes do not.
+
+`mutants/` is mutmut's working copy (copies of the code plus per-mutant results). It is regenerated on every run, is large and machine specific, and mutmut reuses stored results for unchanged source files even when the tests changed, so a stale copy can hide survivors: keep it out of git (it is in `.gitignore`) and delete it if results look stale. CI caches it with an exact key over domain code, tests and lockfile.
 
 Reading the result:
 
 ```sh
-make mutation           # runs; the summary shows killed (🎉) and survived (🙁) mutants
+make mutation           # whole domain, then prints the score and the survivors
+make mutation-changed   # only domain files changed vs origin/main (BASE=... to change), as the PR job does
 make mutation-results   # lists the survivors
 uv run mutmut show <name>   # diff of a surviving mutant: what changed and no test noticed
 ```
@@ -173,7 +183,8 @@ Create an empty `.local_dev` file at the root to work directly on your local bra
 | `.python-version`            | Python version used by uv.                                              |
 | `.pre-commit-config.yaml`    | Git hooks running all quality checks.                                   |
 | `scripts/smoke.sh`           | Boot smoke test (`make smoke`).                                         |
-| `.github/workflows/mutation.yml` | Weekly / on-demand mutation testing.                                |
+| `.github/workflows/mutation.yml` | Mutation testing on PRs (changed files), weekly and on demand.      |
+| `scripts/mutation.py`        | Mutation target selection, summary and score gate.                      |
 | `.env.example`               | Environment variables template.                                         |
 | `.github/workflows/ci.yml`   | CI pipeline.                                                            |
 | `.github/dependabot.yaml`    | Dependency updates.                                                     |

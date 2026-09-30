@@ -18,7 +18,8 @@ make test-unit    # only the fast unit tests
 make hooks        # all quality checks: ruff, mypy, bandit, vulture, xenon, import-linter, pip-audit
 make smoke        # boots the real API and calls /health and /ready
 make lint-imports # architecture contracts (import-linter)
-make mutation     # mutation testing of the domain (slow; not part of the PR checklist)
+make mutation     # mutation testing of the whole domain (slow; weekly in CI)
+make mutation-changed # mutation testing of only the domain files changed vs BASE (default origin/main); runs on every PR
 make format-code  # fix lint issues and format with ruff
 ```
 
@@ -64,8 +65,11 @@ tests/integration/ HTTP tests with TestClient
 - `make smoke` boots the API for real and calls `/health` (liveness, touches no dependency) and `/ready`
   (readiness, touches the real dependencies). A new infra dependency needs a `ReadinessCheckContract`
   implementation registered in `check_readiness_factory`.
-- `make mutation` (weekly in CI) shows tests that pass without checking anything. Do not weaken or delete
-  tests to improve the score; a surviving mutant means a missing assertion.
+- Mutation testing runs on every PR (`Mutation testing` workflow, only the domain files changed in the diff)
+  and weekly on the whole domain. The job fails when the score of the mutated scope is below
+  `MUTATION_MIN_SCORE` (repository variable, default 90). Surviving mutants are listed in the run summary
+  with file and function: add the missing assertion, do not weaken or delete tests or shrink the scope.
+  Never commit `mutants/` (mutmut's working copy, in `.gitignore`).
 
 ## Workflow
 

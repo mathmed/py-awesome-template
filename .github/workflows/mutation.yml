@@ -1,7 +1,10 @@
 name: Mutation testing
 
-# Slow by design: not a PR gate. Runs weekly and on demand.
+# PRs mutate only the domain files changed in the diff (cheap). The weekly run and workflow_dispatch
+# mutate the whole scope as a safety net. Tune the gate with the repository variable
+# MUTATION_MIN_SCORE (Settings > Secrets and variables > Actions > Variables); default 90.
 on:
+  pull_request:
   schedule:
     - cron: "0 6 * * 1"
   workflow_dispatch:
@@ -9,8 +12,39 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MUTATION_MIN_SCORE: ${{ vars.MUTATION_MIN_SCORE || '90' }}
+
 jobs:
-  mutation:
+  mutation-changed:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+
+      # Exact-match key: mutmut reuses stored results for unchanged source files even when the tests
+      # changed, so the key must cover domain code, tests and dependencies. No restore-keys on purpose.
+      - uses: actions/cache@v5
+        with:
+          path: mutants
+          key: mutants-${{ runner.os }}-${{ hashFiles('app/domain/**', 'tests/**', 'pyproject.toml', 'uv.lock') }}
+
+      - name: Mutate changed domain files
+        run: uv run --locked python scripts/mutation.py changed --base "origin/${{ github.base_ref }}"
+
+  mutation-full:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -20,17 +54,8 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
 
-      - name: Run mutmut
+      - name: Run mutmut (full scope)
         run: uv run --locked mutmut run
 
-      # Report only: survivors are recommendations, not failures. Make this step fail to turn it into a gate
-      - name: Summary
-        if: always()
-        run: |
-          {
-            echo "## Mutation testing"
-            echo '```'
-            uv run --locked mutmut results
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
+      - name: Summary and score gate
+        run: uv run --locked python scripts/mutation.py report
