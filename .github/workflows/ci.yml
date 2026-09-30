@@ -22,6 +22,39 @@ jobs:
       - run: uv run --locked ruff check .
       - run: uv run --locked ruff format --check .
 
+  lint-imports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Architecture contracts (import-linter)
+        run: uv run --locked lint-imports
+
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Add your dependencies (Postgres...) as service containers and point the app at them through
+    # the env file, or set SMOKE_COMPOSE_FILE (see scripts/smoke.sh and the README):
+    # services:
+    #   postgres:
+    #     image: postgres:17
+    #     env:
+    #       POSTGRES_PASSWORD: postgres
+    #     ports: ["5432:5432"]
+    #     options: >-
+    #       --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked --no-dev
+      - name: Boot smoke (health + ready)
+        run: ./scripts/smoke.sh
+
   quality:
     runs-on: ubuntu-latest
     permissions:

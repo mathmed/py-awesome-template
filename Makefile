@@ -1,4 +1,4 @@
-.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code
+.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code smoke lint-imports mutation mutation-results
 
 # Install uv (if missing), project dependencies and git hooks
 setup:
@@ -46,3 +46,18 @@ check-code:
 # Fix lint issues and format code
 format-code:
 	uv run ruff check --fix . && uv run ruff format .
+
+# Boot the real API and call /health and /ready (see scripts/smoke.sh for the options)
+smoke:
+	./scripts/smoke.sh
+
+# Check the architecture contracts in pyproject.toml ([tool.importlinter])
+lint-imports:
+	uv run lint-imports
+
+# Mutation testing of the domain (slow, see README); results: make mutation-results
+mutation:
+	uv run mutmut run
+
+mutation-results:
+	uv run mutmut results
