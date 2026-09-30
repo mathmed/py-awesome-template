@@ -20,6 +20,8 @@ dev = [
     "bandit>=1.9.4",
     "faker>=40.39.0",
     "httpx2>=2.13.1",
+    "import-linter>=2.15",
+    "mutmut>=3.8.0",
     "mypy>=2.3.1",
     "pip-audit>=2.10.1",
     "pre-commit>=4.6.2",
@@ -69,3 +71,73 @@ paths = ["app"]
 max-absolute = "B"
 max-modules = "A"
 max-average = "A"
+
+[tool.importlinter]
+root_package = "app"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Application layers (main > presentation > infra > domain)"
+type = "layers"
+layers = ["app.main", "app.presentation", "app.infra", "app.domain"]
+
+[[tool.importlinter.contracts]]
+name = "Domain does not depend on outer layers or common"
+type = "forbidden"
+source_modules = ["app.domain"]
+forbidden_modules = ["app.infra", "app.presentation", "app.common", "app.main"]
+
+[[tool.importlinter.contracts]]
+name = "Domain does not depend on web, ORM, database or HTTP client frameworks"
+type = "forbidden"
+source_modules = ["app.domain"]
+forbidden_modules = [
+    "fastapi",
+    "starlette",
+    "uvicorn",
+    "sqlalchemy",
+    "sqlmodel",
+    "alembic",
+    "psycopg",
+    "psycopg2",
+    "asyncpg",
+    "redis",
+    "httpx",
+    "requests",
+    "aiohttp",
+    "boto3",
+]
+
+[[tool.importlinter.contracts]]
+name = "Domain internal layers (usecases > services > contracts > entities > leaves)"
+type = "layers"
+layers = [
+    "app.domain.usecases",
+    "(app.domain.services)",
+    "app.domain.contracts",
+    "app.domain.entities",
+    "app.domain.errors | (app.domain.enums) | (app.domain.constants)",
+]
+
+[[tool.importlinter.contracts]]
+name = "Use case features are independent from each other"
+type = "independence"
+modules = ["app.domain.usecases.*"]
+
+[[tool.importlinter.contracts]]
+name = "Infra integrations are independent from each other"
+type = "independence"
+modules = ["app.infra.*"]
+
+[[tool.importlinter.contracts]]
+name = "Presentation (fastapi > factories): factories never import routes or middlewares"
+type = "layers"
+layers = ["app.presentation.fastapi", "app.presentation.factories"]
+
+# Mutation testing (make mutation). Scope: business rules only. Infra, presentation, main and
+# common are covered by integration tests and are not worth the cost of mutating.
+[tool.mutmut]
+source_paths = ["app/domain"]
+do_not_mutate = ["app/domain/contracts/*"]
+also_copy = ["app/common", "app/infra", "app/main", "app/presentation"]
+pytest_add_cli_args_test_selection = ["tests/unit/domain", "tests/integration"]

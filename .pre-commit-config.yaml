@@ -43,6 +43,13 @@ repos:
         types: [python]
         pass_filenames: false
 
+      - id: lint-imports
+        name: import-linter (architecture contracts)
+        entry: uv run lint-imports
+        language: system
+        types: [python]
+        pass_filenames: false
+
       - id: pip-audit
         name: pip-audit
         entry: uv run pip-audit
