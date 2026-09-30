@@ -15,7 +15,11 @@ make setup        # install uv, dependencies and git hooks
 make run          # run the API locally with hot reload
 make test         # all tests with coverage (fails under 80%)
 make test-unit    # only the fast unit tests
-make hooks        # all quality checks: ruff, mypy, bandit, vulture, xenon, pip-audit
+make hooks        # all quality checks: ruff, mypy, bandit, vulture, xenon, import-linter, pip-audit
+make smoke        # boots the real API and calls /health and /ready
+make lint-imports # architecture contracts (import-linter)
+make mutation     # mutation testing of the whole domain (slow; weekly in CI)
+make mutation-changed # mutation testing of only the domain files changed vs BASE (default origin/main); runs on every PR
 make format-code  # fix lint issues and format with ruff
 ```
 
@@ -42,6 +46,11 @@ tests/integration/ HTTP tests with TestClient
 - New routes go in `presentation/fastapi/routes/` and must be registered in `routes/__init__.py`.
 - New environment variables go in `app/common/settings.py` (with a default when possible), in
   `.env.example` and in the README environment variables table.
+- CI analyses never post comments on their own: each job runs its tool through
+  `scripts/quality_report.py run <analysis> -- <command>` and uploads the fragment; the `quality-report` job
+  builds the single PR comment. A new analysis needs an `Analysis` value, an analyzer, a `Section`, a job
+  uploading `quality-fragment-<job>`, an entry in the `needs` of `quality-report` and tests (see the README,
+  "Quality Report"). The wrapper keeps the tool's exit code: the job stays the gate.
 - Every change comes with tests: unit tests for use cases and infra (mock external dependencies) and
   integration tests for routes.
 
@@ -49,9 +58,23 @@ tests/integration/ HTTP tests with TestClient
 
 1. The app imports: `uv run python -c "import app.main.main"`.
 2. New environment variables have a default or an entry in `.env.example`.
-3. `make hooks` and `make test` pass. A PR with failing checks is not a PR.
+3. `make hooks`, `make test`, `make lint-imports` and `make smoke` pass. A PR with failing checks is not a PR.
 4. Existing routes are not removed or renamed unless the task asks for it.
 5. The README is updated if the change affects setup, commands, routes, env vars or architecture.
+
+## Deterministic validation
+
+- `make lint-imports` enforces the architecture rules above as import-linter contracts in
+  `pyproject.toml` (`[tool.importlinter]`). If it fails, fix the import, not the contract. Never relax,
+  remove or add an `ignore_imports` to a contract without the user's explicit approval.
+- `make smoke` boots the API for real and calls `/health` (liveness, touches no dependency) and `/ready`
+  (readiness, touches the real dependencies). A new infra dependency needs a `ReadinessCheckContract`
+  implementation registered in `check_readiness_factory`.
+- Mutation testing runs on every PR (`Mutation testing` workflow, only the domain files changed in the diff)
+  and weekly on the whole domain. The job fails when the score of the mutated scope is below
+  `MUTATION_MIN_SCORE` (repository variable, default 90). Surviving mutants are listed in the run summary
+  with file and function: add the missing assertion, do not weaken or delete tests or shrink the scope.
+  Never commit `mutants/` (mutmut's working copy, in `.gitignore`).
 
 ## Workflow
 
@@ -80,6 +103,7 @@ tests/integration/ HTTP tests with TestClient
 - **Data structures**: always use `BaseModel` or `dataclass` for structured data. Use `dict` only as a last
   resort.
 - **Identifiers**: every identifier (variables, functions, classes, parameters, fields) in English.
+- **Language**: all code, comments, logs, docs and user-facing text (including CI reports) in English.
 - **Class names**: never prefix class names with `_`.
 - **Single responsibility**: each module/class has one reason to change. If a module needs to import from
   two unrelated integrations, extract the dependency to an intermediary.

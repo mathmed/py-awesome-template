@@ -6,6 +6,7 @@ from app.domain.errors.domain_errors import (
     ConflictError,
     DomainError,
     NotFoundError,
+    ServiceUnavailableError,
 )
 from app.presentation.fastapi.handlers.domain_error_handler import register_error_handlers
 
@@ -17,7 +18,11 @@ def client() -> TestClient:
 
     @app.get("/raise/{kind}")
     async def raise_error(kind: str) -> None:
-        errors = {"not-found": NotFoundError, "conflict": ConflictError}
+        errors = {
+            "not-found": NotFoundError,
+            "conflict": ConflictError,
+            "unavailable": ServiceUnavailableError,
+        }
         raise errors.get(kind, DomainError)("some message")
 
     return TestClient(app)
@@ -25,7 +30,7 @@ def client() -> TestClient:
 
 @mark.parametrize(
     ("kind", "status_code"),
-    [("not-found", 404), ("conflict", 409), ("generic", 400)],
+    [("not-found", 404), ("conflict", 409), ("unavailable", 503), ("generic", 400)],
 )
 def test_should_map_domain_errors_to_http_status(
     client: TestClient, kind: str, status_code: int

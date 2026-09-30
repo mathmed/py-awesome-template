@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+# Every analysis job runs its tool through scripts/quality_report.py, which keeps the tool's exit code
+# (the job is still the gate) and stores the output as a fragment artifact (quality-fragment-<job>).
+# The quality-report job at the end assembles the fragments into the single PR comment.
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -19,10 +22,155 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked
-      - run: uv run --locked ruff check .
-      - run: uv run --locked ruff format --check .
+      - name: Lint (ruff check)
+        run: uv run --locked python scripts/quality_report.py run ruff-check -- ruff check .
+      - name: Format (ruff format --check)
+        if: ${{ !cancelled() }}
+        run: uv run --locked python scripts/quality_report.py run ruff-format -- ruff format --check .
 
-  quality:
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: quality-fragment-lint
+          path: quality-fragments/
+          if-no-files-found: ignore
+          retention-days: 7
+
+
+  types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Type check (mypy)
+        run: uv run --locked python scripts/quality_report.py run mypy -- mypy app tests
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: quality-fragment-types
+          path: quality-fragments/
+          if-no-files-found: ignore
+          retention-days: 7
+
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Security scan (bandit)
+        run: uv run --locked python scripts/quality_report.py run bandit -- bandit -r app -ll
+      - name: Dependency vulnerability scan (pip-audit)
+        if: ${{ !cancelled() }}
+        run: uv run --locked python scripts/quality_report.py run pip-audit -- pip-audit
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: quality-fragment-security
+          path: quality-fragments/
+          if-no-files-found: ignore
+          retention-days: 7
+
+
+  dead-code:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Dead code check (vulture, advisory)
+        run: uv run --locked python scripts/quality_report.py run vulture --advisory -- vulture app --min-confidence 80
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: quality-fragment-dead-code
+          path: quality-fragments/
+          if-no-files-found: ignore
+          retention-days: 7
+
+
+  complexity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Complexity check (xenon)
+        run: uv run --locked python scripts/quality_report.py run xenon -- xenon app --max-absolute B --max-modules A --max-average A
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: quality-fragment-complexity
+          path: quality-fragments/
+          if-no-files-found: ignore
+          retention-days: 7
+
+
+  lint-imports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Architecture contracts (import-linter)
+        run: uv run --locked python scripts/quality_report.py run import-linter -- lint-imports
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: quality-fragment-lint-imports
+          path: quality-fragments/
+          if-no-files-found: ignore
+          retention-days: 7
+
+
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Add your dependencies (Postgres...) as service containers and point the app at them through
+    # the env file, or set SMOKE_COMPOSE_FILE (see scripts/smoke.sh and the README):
+    # services:
+    #   postgres:
+    #     image: postgres:17
+    #     env:
+    #       POSTGRES_PASSWORD: postgres
+    #     ports: ["5432:5432"]
+    #     options: >-
+    #       --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked --no-dev
+      - name: Boot smoke (health + ready)
+        run: uv run --locked --no-dev python scripts/quality_report.py run smoke -- ./scripts/smoke.sh
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: quality-fragment-smoke
+          path: quality-fragments/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  tests:
     runs-on: ubuntu-latest
     permissions:
       # write: on push to main, the coverage action publishes the README badge to the
@@ -38,85 +186,77 @@ jobs:
       - run: uv sync --locked
 
       - name: Tests + Coverage
-        run: uv run --locked pytest --cov --cov-report=xml --cov-report=term
+        run: uv run --locked python scripts/quality_report.py run pytest -- uv run --locked pytest --cov --cov-report=xml --cov-report=term
 
-      # On PRs: posts the coverage comment. On push to main: updates the coverage badge
-      - name: Coverage report
+      # Only updates the coverage badge on push to main. On PRs the coverage is part of the Quality Report.
+      - name: Coverage badge
+        if: github.event_name == 'push'
         uses: py-cov-action/python-coverage-comment-action@v3
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MINIMUM_GREEN: 80
           MINIMUM_ORANGE: 70
 
-      - name: Type check
-        run: uv run --locked mypy app tests
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: quality-fragment-tests
+          path: quality-fragments/
+          if-no-files-found: ignore
+          retention-days: 7
 
-      - name: Security scan
-        run: uv run --locked bandit -r app -ll
+  # Mutation testing lives in its own workflow (also run weekly and on demand); on PRs it is called
+  # from here so that its result is part of this run and of the Quality Report.
+  mutation:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/mutation.yml
 
-      - name: Dead code check (vulture)
+  quality-report:
+    if: always() && github.event_name == 'pull_request'
+    needs: [lint, types, security, dead-code, complexity, lint-imports, smoke, tests, mutation]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Minimum needed to upsert the PR comment. Read-only on fork PRs: the comment step then warns
+      # instead of failing, and the report is still in the job summary.
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: quality-fragment-*
+          merge-multiple: true
+          path: quality-fragments
+
+      - name: Build report
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          QUALITY_REPORT_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          uv run --locked vulture app --min-confidence 80 > /tmp/vulture.txt 2>&1 || true
-          if [ -s /tmp/vulture.txt ]; then
-            echo "### ⚠️ Vulture — Dead code detected" >> /tmp/quality_summary.md
-            echo '```' >> /tmp/quality_summary.md
-            cat /tmp/vulture.txt >> /tmp/quality_summary.md
-            echo '```' >> /tmp/quality_summary.md
-          else
-            echo "### ✅ Vulture — No dead code detected" >> /tmp/quality_summary.md
-          fi
+          uv run --no-project python scripts/quality_report.py render \
+            --needs-json "$NEEDS_JSON" --output quality-report.md
+          cat quality-report.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Complexity check (xenon)
-        run: |
-          EXIT=0
-          uv run --locked xenon app --max-absolute B --max-modules A --max-average A > /tmp/xenon.txt 2>&1 || EXIT=$?
-          if [ $EXIT -ne 0 ]; then
-            echo "### ⚠️ Xenon — Complexity above threshold" >> /tmp/quality_summary.md
-            echo '```' >> /tmp/quality_summary.md
-            cat /tmp/xenon.txt >> /tmp/quality_summary.md
-            echo '```' >> /tmp/quality_summary.md
-          else
-            echo "### ✅ Xenon — Complexity within threshold" >> /tmp/quality_summary.md
-          fi
-          exit $EXIT
-
-      - name: Dependency vulnerability scan
-        run: uv run --locked pip-audit
-
-      - name: Post quality summary on PR
-        if: always() && github.event_name == 'pull_request'
+      - name: Post report on the PR
         uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
-            let summary = '';
+            const body = fs.readFileSync('quality-report.md', 'utf8');
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
             try {
-              summary = fs.readFileSync('/tmp/quality_summary.md', 'utf8');
-            } catch (e) {
-              summary = 'No results available.';
-            }
-            const body = `<!-- quality-report -->\n## 🔍 Quality Report\n\n${summary}`;
-
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-
-            const existing = comments.find(c => c.body.includes('<!-- quality-report -->'));
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number,
               });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
+              const existing = comments.find(c => c.body.includes('<!-- quality-report -->'));
+              if (existing) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+                return;
+              }
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            } catch (error) {
+              core.warning(`Could not post the Quality Report comment (read-only token on fork PRs?): ${error.message}. The report is in the job summary.`);
             }

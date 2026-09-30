@@ -12,11 +12,12 @@ A production-ready starting point for Python 3.14 APIs with FastAPI: a layered f
 ## Features
 
 - **Layered structure**: domain, infra and presentation layers, with the domain isolated from frameworks through contracts.
-- **Quality tooling**: ruff (lint + format), mypy (types), bandit (security), vulture (dead code), xenon (complexity) and pip-audit (vulnerable dependencies), all in [pre-commit](https://pre-commit.com/) hooks.
+- **Quality tooling**: ruff (lint + format), mypy (types), bandit (security), vulture (dead code), xenon (complexity), import-linter (architecture contracts) and pip-audit (vulnerable dependencies), all in [pre-commit](https://pre-commit.com/) hooks.
 - **Tests**: pytest with unit and integration suites and an 80% coverage gate.
-- **CI**: every pull request runs all checks and posts coverage and quality reports as comments.
+- **CI**: every pull request runs all checks and posts a single **Quality Report** comment with the result of every analysis (see [Quality Report](#quality-report)).
 - **Dependabot**: weekly grouped updates for Python dependencies and GitHub Actions.
-- **Production basics**: typed settings ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)), JSON logs in production, configurable CORS, domain errors mapped to HTTP status codes and a `/health` route.
+- **Production basics**: typed settings ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)), JSON logs in production, configurable CORS, domain errors mapped to HTTP status codes and `/health` (liveness) and `/ready` (readiness) routes.
+- **Deterministic validation for AI-generated code**: a boot smoke test, architecture contracts and mutation testing (see [Validation layers](#validation-layers)).
 - **Docker**: a `dev` stage with hot reload and a slim, non-root `production` stage with healthcheck.
 - **AI-ready**: `CLAUDE.md`/`AGENTS.md` with the project rules, Claude Code agents (`coder`, `reviewer`), permissions and a hook that formats every file the agent edits.
 
@@ -31,6 +32,7 @@ Or run it with Docker: `make dev` (the port is `APP_PORT` from `.env`).
 
 ```sh
 curl http://localhost:8000/health
+curl http://localhost:8000/ready
 curl "http://localhost:8000/example?field1=hello"
 ```
 
@@ -44,7 +46,10 @@ curl "http://localhost:8000/example?field1=hello"
 | `make build`       | Build the production Docker image.                                      |
 | `make test`        | Run all tests with coverage.                                            |
 | `make test-unit`   | Run only the unit tests.                                                |
-| `make hooks`       | Run all quality checks (ruff, mypy, bandit, vulture, xenon, pip-audit). |
+| `make hooks`       | Run all quality checks (ruff, mypy, bandit, vulture, xenon, import-linter, pip-audit). |
+| `make smoke`       | Boot the real API and call `/health` and `/ready`.                      |
+| `make lint-imports` | Check the architecture contracts (import-linter).                      |
+| `make mutation`    | Mutation testing of the domain (slow); `make mutation-results` lists survivors. |
 | `make check-code`  | Lint and check formatting with ruff.                                    |
 | `make format-code` | Fix lint issues and format the code with ruff.                          |
 
@@ -62,6 +67,96 @@ Loaded from the environment or the `.env` file by `app/common/settings.py`. New 
 | `ENV`          | `development` | `development`, `test` or `production`. Production logs JSON.    |
 | `LOG_LEVEL`    | `INFO`        | Python logging level.                                           |
 | `CORS_ORIGINS` | `[]`          | JSON list of allowed origins, e.g. `["http://localhost:3000"]`. |
+
+## Validation layers
+
+Tests written by an AI agent can pass and still prove little. Three deterministic layers catch what line coverage does not.
+
+### Boot smoke test (`make smoke`)
+
+`scripts/smoke.sh` boots the API for real (uvicorn, `ENV=production`, environment loaded from `.env.example`), waits for `/health` with a timeout, then calls `/health` (liveness: touches no dependency) and `/ready` (readiness: runs the checks of every real dependency, returns `503` if any is down). On failure it prints the API logs; on exit it always stops everything. It runs in CI as the `smoke` job and blocks the PR.
+
+The template has no database, so `/ready` reports `{"status": "ready", "dependencies": []}`. To adapt it to your project:
+
+1. **Add a dependency check**: implement `ReadinessCheckContract` in `app/infra/` (e.g. a `SELECT 1` on Postgres, catching the driver's specific exceptions and returning `False`) and register it in `app/presentation/factories/check_readiness_factory.py`.
+2. **Start the dependencies**: create a compose file with them (e.g. `docker/docker-compose.smoke.yaml` with a Postgres and a `healthcheck`) and run `SMOKE_COMPOSE_FILE=docker/docker-compose.smoke.yaml make smoke`. Make it the default in the script if you want. In CI, use `services:` in the `smoke` job (an example is commented in `ci.yml`).
+3. **Run migrations on an empty database**: set `SMOKE_MIGRATE_COMMAND`, e.g. `uv run --no-dev alembic upgrade head`.
+4. **Point the app at the dependencies**: put the variables (e.g. `DATABASE_URL`) in `.env.example`; the smoke test boots with exactly that file (`SMOKE_ENV_FILE` picks another one), so no test-only environment hides a broken configuration.
+
+Other options: `SMOKE_PORT` (default `18000`), `SMOKE_TIMEOUT` (default `30` seconds) and `SMOKE_ENV` (default `production`).
+
+### Architecture contracts (`make lint-imports`)
+
+[import-linter](https://import-linter.readthedocs.io/) contracts in `pyproject.toml` (`[tool.importlinter]`) mirror the architecture rules: layers (`main > presentation > infra > domain`), the domain not importing `infra`, `presentation`, `common`, `main` or web/ORM/HTTP frameworks, layers inside the domain, and independence between use case features and between infra integrations. It runs as a pre-commit hook, in `make hooks` and as the `lint-imports` CI job.
+
+To add a contract, append a block to `pyproject.toml` and run `make lint-imports`:
+
+```toml
+[[tool.importlinter.contracts]]
+name = "Billing does not depend on shipping"
+type = "forbidden"            # or "layers" / "independence"
+source_modules = ["app.domain.usecases.billing"]
+forbidden_modules = ["app.domain.usecases.shipping"]
+```
+
+When a contract breaks, fix the import. Only relax a contract (or add `ignore_imports`) as a deliberate architecture decision, never to make a check pass.
+
+### Mutation testing (`make mutation`)
+
+[mutmut](https://mutmut.readthedocs.io/) changes the domain code (flips a `>` into `>=`, drops an argument, negates a condition...) and runs the tests against each change. A test suite that still passes has a **surviving mutant**: that line is executed but its behaviour is not asserted. Coverage says the line ran; mutation testing says whether a test would notice if it were wrong.
+
+The scope is `app/domain` (use cases and business rules, `[tool.mutmut]` in `pyproject.toml`); infra, presentation, main and common are covered by integration tests and left out. The `Mutation testing` workflow (called from `ci.yml` on PRs, so its result reaches the Quality Report) runs:
+
+- **on every PR**, mutating only the domain files changed in the diff (`git diff origin/<base>...HEAD` filtered by `source_paths`/`do_not_mutate`). If the PR touches no domain file, the job ends in seconds with "No domain files changed". It fails when the score of the mutated files is below the minimum;
+- **weekly** (and on demand via `workflow_dispatch`) on the whole scope, as a safety net.
+
+Reading the run: the **Quality Report** comment has a *Mutation testing* section with the score, the threshold, killed/survived counts and the survivors (file and function). The job's **Summary** tab has the same data in more detail. It shows the score, killed vs survived counts and a table of the survivors with file, function and mutant name. Run `uv run mutmut show <mutant>` locally to see the diff.
+
+**Tuning.** The gate is the repository variable `MUTATION_MIN_SCORE` (Settings → Secrets and variables → Actions → Variables; default `90`, locally it is read from the environment). Set it to your project's baseline. The scope is `[tool.mutmut]` in `pyproject.toml` (`source_paths`, `do_not_mutate`); the PR job follows it automatically. Only changes to files in scope trigger mutation; test-only changes do not.
+
+`mutants/` is mutmut's working copy (copies of the code plus per-mutant results). It is regenerated on every run, is large and machine specific, and mutmut reuses stored results for unchanged source files even when the tests changed, so a stale copy can hide survivors: keep it out of git (it is in `.gitignore`) and delete it if results look stale. CI caches it with an exact key over domain code, tests and lockfile.
+
+Reading the result:
+
+```sh
+make mutation           # whole domain, then prints the score and the survivors
+make mutation-changed   # only domain files changed vs origin/main (BASE=... to change), as the PR job does
+make mutation-results   # lists the survivors
+uv run mutmut show <name>   # diff of a surviving mutant: what changed and no test noticed
+```
+
+Score per module = killed ÷ total mutants. For each survivor, either add the missing assertion, or, if the mutant does not change behaviour (an equivalent mutant), leave it. Don't lower the scope to raise the score.
+
+## Quality Report
+
+Every pull request gets **one** comment (marker `<!-- quality-report -->`, updated in place on every push) with the verdict, a status table and a section per analysis: ✅ ok, ⚠️ warning, ❌ failed, ⏭️ not run (job cancelled/skipped, or nothing to do, e.g. no domain file changed for mutation testing). Long output goes inside collapsible `<details>`.
+
+| Section | Tool | Job | What the section shows |
+| --- | --- | --- | --- |
+| Lint/format | ruff check + format | `lint` | problem / file count; output on failure |
+| Types | mypy (strict) | `types` | files checked or error count |
+| Security | bandit + pip-audit | `security` | issues and vulnerable dependencies |
+| Dead code | vulture | `dead-code` | items found (⚠️, advisory: does not block) |
+| Complexity | xenon | `complexity` | blocks above the threshold |
+| Tests and coverage | pytest + coverage | `tests` | passed/failed/total, coverage vs. minimum |
+| Architecture | import-linter | `lint-imports` | contracts kept/broken; broken contract and violating import |
+| Boot smoke | `scripts/smoke.sh` | `smoke` | booted?, `/health` and `/ready`, time to healthy; API logs only on failure |
+| Mutation testing | mutmut (`mutation.yml`) | `mutation` | score vs. threshold, killed/survivors, survivors by file/function |
+
+**How it works.** Each analysis job runs its tool through `scripts/quality_report.py run <analysis> -- <command>`. The wrapper streams the output, returns the tool's own exit code (the job is still the gate; the report never decides what blocks) and saves a *fragment* `quality-fragments/<analysis>.json`, which the job uploads as the `quality-fragment-<job>` artifact. The final `quality-report` job (`needs` every analysis, `if: always()`, only on PRs, `pull-requests: write`) downloads the fragments, runs `scripts/quality_report.py render` and upserts the comment. A job that failed, was cancelled or produced no fragment appears as ❌ / ⏭️ instead of breaking the report. The report is also written to the job summary, which is the fallback for PRs from forks, where the token is read-only and posting the comment only emits a warning (this fork path is not validated by the PR that introduced it).
+
+Coverage is part of the report: the separate coverage comment no longer exists on PRs, and `python-coverage-comment-action` only updates the README badge on push to `main`.
+
+**Fragment contract.** A fragment is a JSON file `{"analysis": "<id>", "exit_code": 0, "output": "<tool output>", "advisory": false}`. The renderer parses `output` with one function per analysis, so the format of each section is tested in `tests/unit/scripts/test_quality_report.py`. `advisory` (`--advisory` in the wrapper) records the real exit code but makes the wrapper exit 0, for checks that only inform (vulture). Mutation testing also prints a `MUTATION_RESULT: {json}` line (see `scripts/mutation.py`).
+
+**Adding an analysis.**
+
+1. Add a value to `Analysis` and an `analyze_<tool>(fragment) -> Finding` function (status, one-line summary, optional details) in `scripts/quality_report.py`, register it in `ANALYZERS` and add a `Section` (title, job name, analyses) to `SECTIONS` in the order you want.
+2. Create the job in `ci.yml` running the tool as `uv run --locked python scripts/quality_report.py run <analysis> -- <command>`, then upload `quality-fragments/` as the artifact `quality-fragment-<job>` with `if: ${{ !cancelled() }}`.
+3. Add the job to the `needs` of `quality-report`.
+4. Add tests with a sample of the tool's output.
+
+Render locally from fragments: `uv run python scripts/quality_report.py render --dir quality-fragments`.
 
 ## Folder structure
 
@@ -114,12 +209,16 @@ Create an empty `.local_dev` file at the root to work directly on your local bra
 
 | File                         | Description                                                             |
 | ---------------------------- | ----------------------------------------------------------------------- |
-| `pyproject.toml`             | Dependencies and ruff, mypy, pytest, coverage, vulture and xenon config. |
+| `pyproject.toml`             | Dependencies and ruff, mypy, pytest, coverage, vulture, xenon, import-linter and mutmut config. |
 | `uv.lock`                    | Locked dependency versions.                                             |
 | `.python-version`            | Python version used by uv.                                              |
 | `.pre-commit-config.yaml`    | Git hooks running all quality checks.                                   |
+| `scripts/smoke.sh`           | Boot smoke test (`make smoke`).                                         |
+| `.github/workflows/mutation.yml` | Mutation testing on PRs (changed files), weekly and on demand.      |
+| `scripts/mutation.py`        | Mutation target selection, summary and score gate.                      |
+| `scripts/quality_report.py`  | Runs analyses as CI fragments and renders the single Quality Report.    |
 | `.env.example`               | Environment variables template.                                         |
-| `.github/workflows/ci.yml`   | CI pipeline.                                                            |
+| `.github/workflows/ci.yml`   | CI pipeline: one job per analysis plus the `quality-report` job.        |
 | `.github/dependabot.yaml`    | Dependency updates.                                                     |
 | `.vscode/settings.json`      | Ruff format on save and pytest integration.                             |
 | `CLAUDE.md` / `AGENTS.md`    | Instructions for AI coding agents.                                      |

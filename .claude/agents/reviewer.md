@@ -11,7 +11,7 @@ findings. Never edit files, commit or push.
 
 1. Get the diff: `git fetch origin && git diff origin/main...HEAD` (or `gh pr diff <number>` for a PR).
 2. Read the changed files in full, and the files they touch, before judging.
-3. Run `make hooks` and `make test` and include any failure in the report.
+3. Run `make hooks`, `make test`, `make lint-imports` and `make smoke` and include any failure in the report.
 4. Check:
    - **Layers**: `app/domain` does not import from `infra`, `presentation` or `common`; infra code
      implements a domain contract; wiring happens in `presentation/factories`.

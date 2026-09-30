@@ -16,7 +16,7 @@ architecture rules, the mandatory pre-PR checklist and the personal preferences.
    presentation → factory, route).
 5. Write tests: unit tests in `tests/unit/` mirroring `app/`, integration tests for routes in
    `tests/integration/`. Mock external dependencies (databases, HTTP, third-party APIs).
-6. Run `make hooks` and `make test`, and fix anything that fails.
+6. Run `make hooks`, `make test`, `make lint-imports` and `make smoke`, and fix anything that fails.
 7. Run the pre-PR checklist from `CLAUDE.md`.
 8. Commit following the commit convention in `CLAUDE.md`.
 9. Push: `git push -u origin <branch>`.
