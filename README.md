@@ -7,20 +7,25 @@
 | app/common/logger.py                                                 |       16 |        0 |     100% |           |
 | app/common/settings.py                                               |       19 |        0 |     100% |           |
 | app/domain/contracts/example\_database\_contract.py                  |        3 |        0 |     100% |           |
+| app/domain/contracts/readiness\_check\_contract.py                   |        2 |        0 |     100% |           |
 | app/domain/contracts/usecase.py                                      |        5 |        0 |     100% |           |
 | app/domain/entities/models/base\_model.py                            |        3 |        0 |     100% |           |
 | app/domain/entities/models/example\_model.py                         |        2 |        0 |     100% |           |
-| app/domain/errors/domain\_errors.py                                  |        8 |        0 |     100% |           |
+| app/domain/enums/readiness\_status.py                                |        4 |        0 |     100% |           |
+| app/domain/errors/domain\_errors.py                                  |       10 |        0 |     100% |           |
 | app/domain/usecases/example/create\_example\_usecase.py              |       11 |        0 |     100% |           |
+| app/domain/usecases/health/check\_readiness\_usecase.py              |       17 |        0 |     100% |           |
 | app/infra/database/example\_database.py                              |        8 |        0 |     100% |           |
 | app/main/main.py                                                     |        6 |        0 |     100% |           |
+| app/presentation/factories/check\_readiness\_factory.py              |        5 |        0 |     100% |           |
 | app/presentation/factories/create\_example\_factory.py               |        4 |        0 |     100% |           |
 | app/presentation/fastapi/configs/configs.py                          |       16 |        0 |     100% |           |
 | app/presentation/fastapi/handlers/domain\_error\_handler.py          |       10 |        0 |     100% |           |
 | app/presentation/fastapi/middlewares/request\_logging\_middleware.py |       11 |        0 |     100% |           |
 | app/presentation/fastapi/routes/example\_routes.py                   |        7 |        0 |     100% |           |
 | app/presentation/fastapi/routes/health\_routes.py                    |        5 |        0 |     100% |           |
-| **TOTAL**                                                            |  **134** |    **0** | **100%** |           |
+| app/presentation/fastapi/routes/ready\_routes.py                     |        7 |        0 |     100% |           |
+| **TOTAL**                                                            |  **171** |    **0** | **100%** |           |
 
 
 ## Setup coverage badge
