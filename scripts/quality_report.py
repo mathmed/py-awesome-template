@@ -237,7 +237,7 @@ def analyze_pytest(fragment: Fragment) -> Finding:
     coverage_text = f"{coverage[1]}%" if coverage else "n/d"
     if required:
         coverage_text += f" (mínimo {required[1]}%)"
-    counts = f"{passed} passaram, {failed} falharam, {total} no total"
+    counts = f"{passed} passaram, {plural(failed, 'falhou', 'falharam')}, {total} no total"
     if failed or not summary_line:
         summary = counts if summary_line else "pytest falhou antes de concluir"
         return Finding(Status.FAILED, f"{summary} · cobertura {coverage_text}", tail(output))

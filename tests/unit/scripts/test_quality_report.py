@@ -116,7 +116,7 @@ class TestPytest:
         finding = analyze_pytest(fragment(Analysis.PYTEST, PYTEST_FAILED, 1))
 
         assert finding.status == Status.FAILED
-        assert "1 falharam" in finding.summary
+        assert "1 falhou" in finding.summary
         assert "test_should_x" in finding.details
 
     def test_should_fail_when_pytest_crashes(self) -> None:
@@ -345,6 +345,8 @@ class TestLoading:
     def test_should_build_footer_from_github_environment(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        for variable in ("GITHUB_REPOSITORY", "GITHUB_RUN_ID", "GITHUB_SHA", "QUALITY_REPORT_SHA"):
+            monkeypatch.delenv(variable, raising=False)
         assert quality_report.footer_from_environment() == ""
         monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
         monkeypatch.setenv("GITHUB_RUN_ID", "42")
