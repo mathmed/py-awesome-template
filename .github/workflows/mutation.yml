@@ -1,0 +1,36 @@
+name: Mutation testing
+
+# Slow by design: not a PR gate. Runs weekly and on demand.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+
+      - name: Run mutmut
+        run: uv run --locked mutmut run
+
+      # Report only: survivors are recommendations, not failures. Make this step fail to turn it into a gate
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Mutation testing"
+            echo '```'
+            uv run --locked mutmut results
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
