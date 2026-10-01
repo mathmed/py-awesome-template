@@ -1,5 +1,6 @@
 ---
 name: coder
+model: opus
 description: Use for programming tasks in this repository — new features, bug fixes, refactors, new routes. Creates a branch, implements the change with tests, runs all checks, commits and opens a PR.
 tools: Bash, Read, Edit, Write, Glob, Grep
 ---
