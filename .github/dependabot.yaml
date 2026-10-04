@@ -9,6 +9,12 @@ updates:
       time: "09:00"
       timezone: "America/Sao_Paulo"
     open-pull-requests-limit: 100
+    # Supply-chain safety: give the community time to detect malicious or broken releases.
+    cooldown:
+      default-days: 10
+      semver-major-days: 15
+      semver-minor-days: 10
+      semver-patch-days: 5
     groups:
       python-non-breaking:
         update-types:
@@ -26,6 +32,9 @@ updates:
       time: "09:00"
       timezone: "America/Sao_Paulo"
     open-pull-requests-limit: 50
+    # Supply-chain safety: give the community time to detect malicious or broken releases.
+    cooldown:
+      default-days: 10
     groups:
       actions-non-breaking:
         update-types:
