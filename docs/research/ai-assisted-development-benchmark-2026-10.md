@@ -204,8 +204,8 @@ self-merged.
   time, +9% bugs per developer [6]. Anthropic says code output per engineer grew 200% and only 16% of PRs got
   substantive review before its review tool [16]. Monzo: "the bottleneck moves from 'find an engineer with
   capacity' to 'find a reviewer'" [69].
-- **Trust is low and falling** [S]: 46% of developers distrust AI accuracy vs 33% who trust it [7]; DORA: 30%
-  little or no trust [1]. GitClear reports more duplication and less refactoring in AI-era code [8] [V].
+- **Trust is low** [S]: 46% of developers distrust AI accuracy vs 33% who trust it, which Stack Overflow calls an
+  all-time low [7]; in DORA 30% report little or no trust, slightly fewer than the year before [1]. GitClear reports more duplication and less refactoring in AI-era code [8] [V].
 - **DORA now has five delivery metrics**: lead time, deployment frequency, failed-deployment recovery time
   (throughput) and change failure rate plus **rework rate** — unplanned deployments caused by production issues
   (instability) [3].
@@ -216,10 +216,10 @@ self-merged.
 for coding agents" (compilers, linters, structural tests, test suites wired so failures trigger self-correction,
 ideally before commit) and "mutation testing" in *Trial*, and "architectural fitness functions" are its named
 countermeasure to "codebase cognitive debt" (*Caution*) [10]. Stripe's agents ("minions", >1,000 merged PRs per
-week at a company moving >$1T/year) run inside "blueprints" that interleave deterministic steps ("always lint
+week, 1,300 by the second post, at a company moving >$1T/year) run inside "blueprints" that interleave deterministic steps ("always lint
 changes at the end of a run") with agent steps, and cap CI at one or two rounds because returns diminish [67][68].
-Google SRE's first principle for agentic operations: processes already automated with classic non-AI systems
-do not need to be replaced [85]. **Where we stand:** ahead on the analyses themselves; behind on enforcement (2.4)
+One of Google SRE's stated principles for agentic operations: processes already automated with classic non-AI
+systems do not need to be replaced [85]. **Where we stand:** ahead on the analyses themselves; behind on enforcement (2.4)
 and on running the checks outside the agent's control (2.2).
 
 **Mutation testing.** [S] Google's production system mutates only changed lines during code review, at most one
@@ -227,16 +227,18 @@ mutant per line, suppresses "arid" nodes using developer feedback and shows surv
 "Please fix"/"Not useful" links — no score threshold (760k changes, 2M mutants reported) [29]. Meta's ACH uses an
 LLM to generate concern-specific mutants and then tests that kill them; engineers accepted 73% of the tests [30].
 Thoughtworks calls mutation testing "the most honest signal" against "perpetually green" AI-written tests [10].
-Practitioners cite it as the tool that catches tests that pass for the wrong reason [25]. **Where we stand:**
-changed-function mutation on PRs (drawdoro, hulk, visao, jarvis, astrodoro) is the practice Google and Thoughtworks
-describe; the template still mutates whole files; thresholds are percentages over small denominators, unlike Google's
-per-mutant findings.
+Practitioners cite it as the tool that catches tests that pass for the wrong reason [25]; Trail of Bits reports a
+fund-draining vulnerability that coverage missed and mutation testing found, and warns that triage is the hard
+part: clustered surviving mutants signal real gaps, isolated operator mutants in utilities are mostly noise [96].
+Meta now lets engineers describe a compliance fault in plain text and has an LLM generate the matching mutants and
+the tests that catch them [97]. **Where we stand:** changed-function mutation on PRs (drawdoro, hulk, visao,
+jarvis, astrodoro) is the practice Google and Thoughtworks describe; the template still mutates whole files;
+thresholds are percentages over small denominators, unlike Google's per-mutant findings.
 
 **Test integrity: agents optimise against the tests.** [S] METR found o3 reward-hacking in 30% of runs on tasks
 whose scoring code it could see (0.7% elsewhere), sometimes by modifying tests or graders [31]; ImpossibleBench
 measures agents deleting or special-casing failing tests and shows test access and feedback loops change cheating
-rates [32].
-Anthropic's long-running-agent harness found agents declaring features done without end-to-end verification and
+rates [32]. Anthropic's long-running-agent harness found agents declaring features done without end-to-end verification and
 had to forbid editing tests ("it is unacceptable to remove or edit tests") [64]. Claude Code's documentation is
 explicit that instructions in `CLAUDE.md` "shape what Claude tries to do, but they don't change what Claude Code
 allows" [51]. Willison's bar: every change ships with a test "that should fail if you revert the implementation"
@@ -292,7 +294,8 @@ people stops holding (public preview) [91].
 - *Compromised CI components:* tj-actions/changed-files tags were re-pointed to secret-dumping code (CVE-2025-30066)
   [39]; in March 2026 76 of 77 `trivy-action` tags were force-pushed to credential-stealing malware [40], which led
   to malicious LiteLLM releases on PyPI live for ~40 minutes [41]. Pinning to a full commit SHA protects against
-  re-pointed tags; GitHub now lets orgs *require* SHA pinning [47]; `zizmor` statically finds unpinned or injectable workflow steps [48].
+  re-pointed tags; GitHub now lets orgs *require* SHA pinning [47]; `zizmor` statically finds unpinned or
+  injectable workflow steps [48].
 - *AI CLIs as attack payload:* the Nx "s1ngularity" malware (Aug 2025) tried to use locally installed Claude/Gemini
   CLIs to hunt for secrets [42].
 - *Cooldowns:* most compromised releases are caught within hours to days, so waiting N days before adopting a
@@ -358,8 +361,9 @@ workflows, ramping versions) is its deployment-time safety net [82]. **Where we 
 - **Hooks and permissions** [V-doc/P]. Deny rules and `PreToolUse` hooks are enforced by the harness in every
   mode; allow rules do nothing under `bypassPermissions`, which the docs reserve for isolated containers/VMs run
   as non-root; the newer "auto" mode puts a classifier in front of risky actions (e.g. merging an unapproved PR,
-  disabling CI, pushing secrets out) and is available to headless sessions on recent versions [51][52]. Practitioners' hook stories — a wiped home
-  directory, a leaked key — are why deterministic hooks beat prompts [59]. Repo-controlled `.claude/settings.json`
+  disabling CI, pushing secrets out) and is available to headless sessions on recent versions [51][52].
+  Practitioners' hook stories — a wiped home directory, a leaked key — are why deterministic hooks beat prompts
+  [59]. Repo-controlled `.claude/settings.json`
   hooks were themselves an RCE vector until fixed (CVE-2025-59536, CVE-2026-21852) [55].
 - **Isolation is the default for unattended agents** [S/P]. Anthropic's sandbox (filesystem + network isolation,
   credentials kept outside, git via a scoped proxy that only pushes to the configured branch) cut permission
@@ -379,8 +383,7 @@ workflows, ramping versions) is its deployment-time safety net [82]. **Where we 
 - **Orchestration patterns that work** [P]. One-shot agents inside deterministic blueprints with bounded CI rounds
   (Stripe) [68]; feature lists + progress files + commit per feature + end-to-end checks for long runs (Anthropic)
   [64]; research → plan → implement with human review concentrated on the research and plan artefacts
-  (HumanLayer) [65].
-  Spec-driven *tools* are overkill for small tasks ("I'd rather review code than all these markdown files") [66];
+  (HumanLayer) [65]. Spec-driven *tools* are overkill for small tasks ("I'd rather review code than all these markdown files") [66];
   Thoughtworks keeps spec-driven development in *Assess* [11] and agent swarms in *Caution* [10].
 - **Measuring productivity honestly** [S]. Perception is unreliable [4][5]; LOC and PR counts are a *Caution*
   item [10]; DX's framework measures utilisation, impact and cost together [9] [V]. The defensible leading
@@ -390,13 +393,15 @@ workflows, ramping versions) is its deployment-time safety net [82]. **Where we 
   take over a codebase, and see "no solution in sight" [74]; Thoughtworks names the same risk "codebase cognitive
   debt" and prescribes feedback sensors, tracking cognitive load and architectural fitness functions [10].
 - **Regulated and fintech practice** [S/P]. Stripe (payments) and Monzo (bank) keep a human reviewing every agent PR
-  (Monzo: an engineer "reviews and merges") and isolate the agent runtime [67][69]. The Linux kernel requires the human submitter to
-  review all AI-generated code and attribute it with an `Assisted-by` tag [75]; Ghostty requires disclosure [76].
+  (Monzo: an engineer "reviews and merges") and isolate the agent runtime [67][69] — though practitioners doubt that
+  1,300 agent PRs a week get more than rubber-stamp review and read such posts partly as recruiting [98]. The
+  Linux kernel requires the human submitter to review all AI-generated code and attribute it with an
+  `Assisted-by` tag [75]; Ghostty requires disclosure [76].
   In Brazil, CMN Resolution 4.893/2021 requires controls for access, leak prevention, periodic vulnerability scans
   and **traceability**, applied "in the development of secure information systems and in the adoption of new
   technologies" [88]; BCB Resolution 85/2021 is the equivalent rule for payment institutions (its text was not
-  reviewed here) [89]. PCI DSS 6.2.3.1, where card data is in
-  scope, requires manual code review by someone other than the author, approved before release [90]. Agent PRs
+  reviewed here) [89]. PCI DSS 6.2.3.1, where card data is in scope, requires that manual code reviews, when used,
+  be done by someone other than the author and approved by management before release [90]. Agent PRs
   opened under the owner's identity and self-merged (2.7) weaken both traceability and separation of duties.
 
 ---
@@ -549,8 +554,10 @@ driving agents. "Impact" is about expected reduction of defects, incidents or ex
 - *Impact:* very high (security and correctness — concurrent jobs on one project currently share a working copy).
   *Effort:* 1–2 weeks. *Risk:* friction from network allowlists; debugging inside containers.
 - *How (jarvis):*
-  1. One working directory per job (`git worktree add` or a fresh clone), deleted at the end; a per-project lock
-     until then; set the concurrency limit explicitly.
+  1. One working directory per job: Claude Code's built-in `claude -p --worktree job-<id>` creates an isolated
+     worktree and blocks edits and git commands aimed at the main checkout [95]; headless runs don't clean up, so
+     the orchestrator runs `git worktree remove` at the end. Until then, a per-project lock and an explicit
+     concurrency limit.
   2. Run each job in a container (non-root image with uv, Python, Node) or under Claude Code's sandbox runtime:
      write access only to the job directory; egress only to the Git host, the model API and a package proxy.
   3. Pass an explicit minimal environment instead of inheriting the service's; GitHub access through a GitHub App
@@ -622,7 +629,8 @@ driving agents. "Impact" is about expected reduction of defects, incidents or ex
 - *How:* port drawdoro's changed-function targeting to the template; for hulk/visao (9% global floor) add
   `diff-cover` on changed lines (e.g. ≥85%); turn the "ratchet" into a real one (weekly run writes per-module
   scores to a tracked file via PR; PR job fails on regression); for small denominators, gate on "no unacknowledged
-  surviving mutant in changed lines", with an explicit allowlist for equivalent mutants.
+  surviving mutant in changed lines", with an explicit allowlist for equivalent mutants, and rank clusters of
+  survivors above isolated ones when triaging [96].
 
 **R12 — Agent outcome metrics in the engineering-metrics dashboard**
 
@@ -637,12 +645,14 @@ driving agents. "Impact" is about expected reduction of defects, incidents or ex
 
 **R13 — Property-based and API-contract tests for money logic and public APIs**
 
-- *Evidence:* agentic PBT [33]; Schemathesis [34]; oasdiff [35]; precision-mismatch report [25]. [S]
+- *Evidence:* agentic PBT [33]; Schemathesis [34]; oasdiff [35]; precision-mismatch report [25]; Meta ACH [30][97]. [S]
 - *Impact:* high on the bank's core services. *Effort:* 2–5 days per service. *Risk:* low.
 - *How:* template first (Hypothesis in dev dependencies, one example property test, a `CLAUDE.md` rule that
   money, rounding and parsing code needs a property test: round-trip, conservation of totals, idempotency);
   Schemathesis against `/openapi.json` inside the smoke job; `oasdiff` breaking-change check on the public API
-  repository.
+  repository. Next step for regulatory invariants: Meta-style concern-driven mutation — describe the fault in plain
+  text ("a transfer above the night-time limit is accepted", "a fee is rounded against the customer") and have an
+  agent generate the mutant and the test that must kill it [97].
 
 **R14 — SLOs with burn-rate alerting, and progressive delivery where it fits**
 
@@ -738,7 +748,7 @@ vendor research, marketing) · **N** news · **G** standard, regulation, canonic
 | 4 | [METR: early-2025 AI and experienced OSS developers (RCT)](https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/) + [HN discussion](https://news.ycombinator.com/item?id=44522772) | 2025-07-10 | R + F | Randomised, small n (16). High for its setting. |
 | 5 | [METR: We are changing our developer productivity experiment design](https://metr.org/blog/2026-02-24-uplift-update/) | 2026-02-24 | R | Authors flag strong selection effects. Medium. |
 | 6 | [Faros AI: The AI Productivity Paradox](https://www.faros.ai/blog/ai-software-engineering) | 2025-07-23 | V | Telemetry from 10k devs, vendor of analytics. Medium-low. |
-| 7 | [Stack Overflow Developer Survey 2025 — AI](https://survey.stackoverflow.co/2025/ai) | 2025-07-29 | R | Large self-selected survey. Medium-high. |
+| 7 | [Stack Overflow Developer Survey 2025 — AI](https://survey.stackoverflow.co/2025/ai) and [press release](https://stackoverflow.co/company/press/archive/stack-overflow-2025-developer-survey/) | 2025-07-29 | R | Large self-selected survey. Medium-high. |
 | 8 | [GitClear: AI Copilot Code Quality 2025](https://www.gitclear.com/ai_assistant_code_quality_2025_research) | 2025-02 | V | Large dataset, vendor methodology. Medium-low. |
 | 9 | [DX: Introducing the AI Measurement Framework](https://newsletter.getdx.com/p/introducing-the-ai-measurement-framework) | 2025-07-09 | V | Vendor framework. Low-medium. |
 | 10 | [Thoughtworks Technology Radar Vol. 34 (PDF)](https://www.thoughtworks.com/content/dam/thoughtworks/documents/radar/2026/04/tr_technology_radar_vol_34_en.pdf) | 2026-04 | B | Consultancy synthesis across clients; opinion, not data. Medium-high. |
@@ -872,10 +882,19 @@ vendor research, marketing) · **N** news · **G** standard, regulation, canonic
 | 93 | visao `evals/cases/*.yaml` (11 cases) | 2026-03-17 → 2026-04-15 | I | First-hand, our monitoring agent. |
 | 94 | GitHub API and `gh` queries on the sampled repos (branch rules, security settings, variables, PRs, CI runs) | 2026-10-03 | I | Reproducible from the repos. |
 
-**Source mix** (94 numbered entries; a blog post and its discussion thread count as two sources): **99 external
-sources** — **43 practitioner** (17 forum discussions on HN, Reddit and lobste.rs; 17 independent practitioner
-blogs and syntheses, Thoughtworks' Radar included; 9 first-party engineering reports from companies running what
-they describe), **25 vendor** (product posts, documentation, vendor research, marketing), **18 research** papers and
+### A.11 Added in the second research pass
+
+| # | Source | Date | Type | Credibility note |
+| --- | --- | --- | --- | --- |
+| 95 | [Claude Code docs: Run parallel sessions with worktrees](https://code.claude.com/docs/en/worktrees) | fetched | V | Authoritative for the tool (`--worktree`, isolation checks, headless cleanup). |
+| 96 | [Trail of Bits: Mutation testing for the agentic era](https://blog.trailofbits.com/2026/04/01/mutation-testing-for-the-agentic-era/) | 2026-04-01 | E | Security firm describing its audit practice; also releases the tools. Medium-high. |
+| 97 | [Meta Engineering: LLMs Are the Key to Mutation Testing and Better Compliance](https://engineering.fb.com/2025/09/30/security/llms-are-the-key-to-mutation-testing-and-better-compliance/) | 2025-09-30 | E | First-party follow-up to [30]. Medium-high. |
+| 98 | [HN: Minions – Stripe's Coding Agents Part 2](https://news.ycombinator.com/item?id=47086557) (131 pts, 61 comments) | 2026-02-20 | F | Practitioner skepticism about review depth and the post's detail. Medium. |
+
+**Source mix** (98 numbered entries; a blog post and its discussion thread count as two sources): **103 external
+sources** — **46 practitioner** (18 forum discussions on HN, Reddit and lobste.rs; 17 independent practitioner
+blogs and syntheses, Thoughtworks' Radar included; 11 first-party engineering reports from companies running what
+they describe), **26 vendor** (product posts, documentation, vendor research, marketing), **18 research** papers and
 surveys, **10** standards, regulations, canonical guides and incident advisories, and **3** news reports — plus 3
 internal evidence sets.
 
