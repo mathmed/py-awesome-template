@@ -763,7 +763,7 @@ vendor research, marketing) · **N** news · **G** standard, regulation, canonic
 | 14 | [Chowdhury et al., From Industry Claims to Empirical Reality](https://arxiv.org/abs/2604.03196) | 2026-04-03 | R | Correlational, OSS. Medium. |
 | 15 | [Selvanayagam & Ghaleb, AI-to-AI Code Reviews of GitHub PRs](https://arxiv.org/abs/2608.21311) | 2026-08-21 | R | Descriptive dataset. Medium. |
 | 16 | [Anthropic: Code Review for Claude Code](https://claude.com/blog/code-review) | 2026-03-09 | V | Vendor on own product. Low-medium. |
-| 17 | [Uber: uReview](https://www.uber.com/us/en/blog/ureview/) | 2025 | E | First-party at scale, self-measured. Medium-high. |
+| 17 | [Uber: uReview](https://www.uber.com/us/en/blog/ureview/) | 2025-08 (date from a mirror; original page blocked automated reads) | E | First-party at scale, self-measured. Medium-high. |
 | 18 | [Cloudflare: Orchestrating AI Code Review at scale](https://blog.cloudflare.com/ai-code-review/) | 2026-04-20 | E | First-party, detailed numbers. Medium-high. |
 | 19 | [HN: There is an AI code review bubble](https://news.ycombinator.com/item?id=46766961) (351 pts, 249 comments) | 2026-01-26 | F | Mixed practitioner views; vendor (Greptile) in thread. Medium. |
 | 20 | [HN: Orchestrating AI code review at scale](https://news.ycombinator.com/item?id=48276152) (145 pts) | 2026-05-26 | F | Practitioner reactions. Medium. |
