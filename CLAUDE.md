@@ -94,33 +94,65 @@ tests/integration/ HTTP tests with TestClient
 - **New standards**: whenever the user asks to change a code pattern (use enums instead of strings, name
   variables a certain way...), ask whether it should become a project standard. If yes, add it to this
   list so it is followed in every future conversation.
+- **Reuse first (YAGNI)**: follow the existing pattern instead of inventing one. Before creating a function,
+  class, module, contract, service or dependency, check whether one already exists and reuse it. When you
+  change shared code, find and update every caller.
+- **Single responsibility**: each module/class has one reason to change. If a module needs to import from
+  two unrelated integrations, extract the dependency to an intermediary.
+- **SOLID beyond SRP**: open for extension, closed for modification; depend on abstractions (domain
+  contracts) received through the constructor. Injected dependencies are mandatory — no
+  `repo: Repo | None = None` with a hidden fallback.
+- **DDD**: invariants, calculations and state transitions live as methods of the entity or value object,
+  with no I/O or external dependencies. Request/response DTOs only carry data and validation. Value
+  objects are immutable (`@dataclass(frozen=True)`).
+- **Data access**: only through a contract implemented in `infra`. It only persists and fetches — no
+  business rules there and no ad-hoc queries anywhere else.
 - **`__init__.py`**: only create one when it actually exports symbols. Never create empty `__init__.py`
   files just to mark packages.
 - **Comments and docstrings**: no docstrings on functions, methods or classes. Comments only when the code
   is genuinely confusing and the reason is not obvious from the names. Never comment what the code does.
-- **Enums**: always use `enum.StrEnum` for fixed sets of strings (status, types, roles...). Never spread
-  hardcoded strings across the code.
-- **Data structures**: always use `BaseModel` or `dataclass` for structured data. Use `dict` only as a last
-  resort.
 - **Identifiers**: every identifier (variables, functions, classes, parameters, fields) in English.
+  Booleans start with `is_`, `has_`, `should_` or `can_`.
 - **Language**: all code, comments, logs, docs and user-facing text (including CI reports) in English.
 - **Class names**: never prefix class names with `_`.
-- **Single responsibility**: each module/class has one reason to change. If a module needs to import from
-  two unrelated integrations, extract the dependency to an intermediary.
-- **Dependencies**: always use the latest available version of any external library.
-- **README**: after any relevant change (new route, command, setup step, env var or architecture change),
-  check whether the README needs updating and update it.
 - **Typing**: every parameter and return value is typed, and `Any` is not used unless there is no
-  alternative (and the reason is written next to it). mypy runs in strict mode.
-- **Logging**: never use `print`; always `logger = logging.getLogger(__name__)`. Never log tokens,
-  passwords, secrets or personal data.
+  alternative (and the reason is written next to it). Use `X | None` and built-in generics, never
+  `Optional`/`Union`; `# type: ignore` only with the error code.
+- **Data structures**: always use `BaseModel` or `dataclass` for structured data. Use `dict` only as a last
+  resort.
+- **Enums**: always use `enum.StrEnum` for fixed sets of strings (status, types, roles...). Never spread
+  hardcoded strings across the code.
+- **No magic values**: limits, timeouts, truncations and URLs are named constants at the top of the module
+  (`_UPPER` when private) or in `app/domain/constants/`. Constant collections are `tuple`/`frozenset`.
+- **Money and exact values**: always `Decimal`, never `float`.
 - **Dates**: always timezone-aware UTC — `datetime.now(UTC)`. Never `datetime.now()` or `datetime.utcnow()`.
+- **Edge cases**: before implementing, list the states, dates and input values that can reach the code and
+  handle each one. Irreversible effects (charge, send, delete) happen exactly once.
+- **Idempotency**: repeating the same call (retry, webhook redelivery, double click) never duplicates an
+  effect — use an idempotency key, an upsert or a state check.
+- **Fail loudly**: never swallow exceptions (no `except Exception: pass`). Catch specific exceptions only
+  where something can be done; log unexpected errors with `logger.exception` and propagate or translate
+  them. Only best-effort side effects may continue, after logging.
+- **Nothing internal leaks**: error messages are written for people — no exception text, vendor or
+  infrastructure names or internal ids in responses.
+- **Hot paths**: no N+1 (query or call inside a loop) and no slow work on paths every request goes through.
+- **Functions**: small; a short orchestrator composes verb-named helpers. Many optional parameters are
+  keyword-only (`*`). Imports are absolute and at the top; local imports only to break a cycle.
+- **Early return**: prefer guard clauses and early returns over nested `if`s.
 - **Thin routes**: a route only converts the request, calls the use case and returns the response. No
   business rules in `presentation`.
 - **Use case names**: start with a verb (`CreateUser`, `ListInvoices`), one use case per file.
-- **Exceptions**: never `except Exception: pass`. Catch specific exceptions, and only where something
-  can be done about them.
-- **Early return**: prefer guard clauses and early returns over nested `if`s.
+- **Public API**: every new endpoint is authenticated unless explicitly declared public, and validates its
+  input at the edge. Public contracts only grow additively — never remove or rename a route or response
+  field.
+- **Security**: never put tokens, passwords, secrets or personal data in logs, exception messages or the
+  repository. Compare secrets with `hmac.compare_digest`, load YAML with `yaml.safe_load`, and call
+  `subprocess` with an argument list, a `timeout` and no `shell=True`.
+- **Logging**: never use `print`; always `logger = logging.getLogger(__name__)`.
+- **Configuration**: read settings only from `app/common/settings.py`; never `os.getenv` elsewhere.
+- **Dependencies**: always use the latest available version of any external library.
+- **README**: after any relevant change (new route, command, setup step, env var or architecture change),
+  check whether the README needs updating and update it.
 - **Tests**: name them `test_should_<behaviour>` and build the object under test in a `sut` fixture.
 - **Commits**: Conventional Commits in English — `<type>: <short description>`, with `feat`, `fix`,
   `refactor`, `chore`, `test`, `docs`, `ci` or `build`.
