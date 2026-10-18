@@ -13,6 +13,7 @@ from scripts.quality_report import (
     analyze_import_linter,
     analyze_mutation,
     analyze_pytest,
+    analyze_schemathesis,
     analyze_smoke,
     analyze_suppressions,
     analyze_vulture,
@@ -72,6 +73,52 @@ SMOKE_FAILED = """>> starting the API on http://127.0.0.1:18000 (ENV=production)
 Traceback: boom
 """
 
+SCHEMATHESIS_OK = """>> API healthy after 0.545s
+>> running schemathesis against http://127.0.0.1:18000/openapi.json (seed 1, max 50 examples)
+     Operations:       3 selected / 3 total
+=================================== SUMMARY ====================================
+Test cases:
+  54 generated, 54 passed
+
+Seed: 1
+
+=========================== No issues found in 0.46s ===========================
+>> contract OK
+"""
+SCHEMATHESIS_FAILED = """     Operations:       3 selected / 3 total
+=================================== FAILURES ===================================
+_________________________________ GET /example _________________________________
+1. Test Case ID: cidoQT
+
+- Server error
+
+    curl -X GET 'http://127.0.0.1:18000/example?field1=example'
+
+=================================== SUMMARY ====================================
+
+Test Phases:
+  ❌ Coverage
+
+Failures:
+  ❌ Server error: 1
+  ❌ Undocumented HTTP status code: 1
+
+Test cases:
+  29 generated, 1 found 2 unique failures
+
+Seed: 1
+
+============================= 2 failures in 0.25s ==============================
+>> contract: schemathesis failed: contract violations or invalid options, see its output above
+>> contract FAILED. API logs:
+RuntimeError: boom
+"""
+SCHEMATHESIS_NOT_STARTED = """>> starting the API on http://127.0.0.1:18000 (ENV=production)
+>> contract: the API process exited before becoming healthy
+>> contract FAILED. API logs:
+ValidationError: env
+"""
+
 
 def mutation_output(score: float, survivors: list[dict[str, str]], skipped: bool = False) -> str:
     payload = {
@@ -109,6 +156,7 @@ def all_ok_fragments() -> dict[Analysis, Fragment]:
         Analysis.SMOKE: SMOKE_OK,
         Analysis.MUTATION: mutation_output(100.0, []),
         Analysis.SUPPRESSIONS: SUPPRESSIONS_OK,
+        Analysis.SCHEMATHESIS: SCHEMATHESIS_OK,
     }
     return {analysis: fragment(analysis, outputs.get(analysis, "")) for analysis in Analysis}
 
@@ -174,6 +222,45 @@ class TestSmoke:
         assert "did not become healthy" in finding.summary
         assert "/health ❌ · /ready ❌" in finding.summary
         assert finding.details == "Traceback: boom"
+
+
+class TestSchemathesis:
+    def test_should_report_cases_operations_and_seed(self) -> None:
+        finding = analyze_schemathesis(fragment(Analysis.SCHEMATHESIS, SCHEMATHESIS_OK))
+
+        assert finding.status == Status.OK
+        assert finding.summary == (
+            "No contract violations · 54 test cases on 3 operations · seed 1"
+        )
+        assert finding.details == ""
+
+    def test_should_list_failed_checks_with_the_failures_and_api_logs(self) -> None:
+        finding = analyze_schemathesis(fragment(Analysis.SCHEMATHESIS, SCHEMATHESIS_FAILED, 1))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == (
+            "2 failures: Server error (1); Undocumented HTTP status code (1)"
+            " · 29 test cases on 3 operations · seed 1"
+        )
+        assert finding.details.startswith("_" * 33 + " GET /example")
+        assert "curl -X GET" in finding.details
+        assert "SUMMARY" not in finding.details
+        assert finding.details.endswith("--- API logs ---\nRuntimeError: boom")
+
+    def test_should_report_why_the_contract_test_did_not_run(self) -> None:
+        finding = analyze_schemathesis(fragment(Analysis.SCHEMATHESIS, SCHEMATHESIS_NOT_STARTED, 1))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == (
+            "Contract test did not run: the API process exited before becoming healthy"
+        )
+        assert finding.details == "ValidationError: env"
+
+    def test_should_fail_with_the_raw_output_when_nothing_is_recognized(self) -> None:
+        finding = analyze_schemathesis(fragment(Analysis.SCHEMATHESIS, "uv: not found", 127))
+
+        assert finding.summary == "Contract test did not run"
+        assert finding.details == "uv: not found"
 
 
 class TestMutation:

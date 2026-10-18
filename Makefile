@@ -1,4 +1,4 @@
-.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code smoke lint-imports mutation mutation-changed mutation-results suppressions suppressions-update
+.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code smoke lint-imports mutation mutation-changed mutation-results suppressions suppressions-update contract
 
 # Install uv (if missing), project dependencies and git hooks
 setup:
@@ -50,6 +50,10 @@ format-code:
 # Boot the real API and call /health and /ready (see scripts/smoke.sh for the options)
 smoke:
 	./scripts/smoke.sh
+
+# Boot the real API and run a bounded, deterministic Schemathesis pass against its OpenAPI schema
+contract:
+	./scripts/contract.sh
 
 # Check the architecture contracts in pyproject.toml ([tool.importlinter])
 lint-imports:

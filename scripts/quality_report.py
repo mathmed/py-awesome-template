@@ -34,6 +34,7 @@ class Analysis(StrEnum):
     SMOKE = "smoke"
     MUTATION = "mutation"
     SUPPRESSIONS = "suppressions"
+    SCHEMATHESIS = "schemathesis"
 
 
 class Status(StrEnum):
@@ -109,6 +110,7 @@ SECTIONS = [
     Section("Tests and coverage (pytest)", "tests", (Analysis.PYTEST,)),
     Section("Architecture (import-linter)", "lint-imports", (Analysis.IMPORT_LINTER,)),
     Section("Boot smoke (/health and /ready)", "smoke", (Analysis.SMOKE,)),
+    Section("API contract (schemathesis)", "contract", (Analysis.SCHEMATHESIS,)),
     Section("Mutation testing (mutmut)", "mutation", (Analysis.MUTATION,)),
 ]
 
@@ -303,6 +305,68 @@ def analyze_smoke(fragment: Fragment) -> Finding:
     )
 
 
+SCHEMATHESIS_VERDICT = re.compile(r"^=+ (?P<verdict>.+?) in [\d.]+s =+$", re.MULTILINE)
+SCHEMATHESIS_FAILURE = re.compile(r"^\s*❌ (?P<check>[^:\n]+): (?P<count>\d+)$", re.MULTILINE)
+SCHEMATHESIS_OPERATIONS = r"Operations:\s+\d+ selected / (\d+) total"
+MAX_API_LOG_CHARS = 2000
+# Must match API_LABEL in scripts/contract.sh
+CONTRACT_LABEL = "contract"
+
+
+def between(text: str, start: str, end: str) -> str:
+    begin = text.find(start)
+    if begin < 0:
+        return ""
+    finish = text.find(end, begin)
+    return text[begin + len(start) : finish if finish >= 0 else None].strip("= \n")
+
+
+def api_logs(output: str, label: str) -> str:
+    parts = output.split(f">> {label} FAILED. API logs:", 1)
+    return parts[1].strip() if len(parts) == 2 else ""
+
+
+def schemathesis_scope(output: str) -> str:
+    cases = first_int(r"(\d+) generated", output)
+    operations = first_int(SCHEMATHESIS_OPERATIONS, output)
+    seed = re.search(r"^Seed: (.+)$", output, re.MULTILINE)
+    scope = (
+        f"{plural(cases, 'test case', 'test cases')} on "
+        f"{plural(operations, 'operation', 'operations')}"
+    )
+    return f"{scope} · seed {seed[1]}" if seed else scope
+
+
+def schemathesis_details(output: str) -> str:
+    failures = tail(between(output, " FAILURES ", " SUMMARY "))
+    logs = api_logs(output, CONTRACT_LABEL)
+    if not logs:
+        return failures
+    return f"{failures}\n\n--- API logs ---\n{tail(logs, MAX_API_LOG_CHARS)}"
+
+
+def analyze_schemathesis(fragment: Fragment) -> Finding:
+    output = clean(fragment.output)
+    if fragment.passed:
+        return Finding(Status.OK, f"No contract violations · {schemathesis_scope(output)}")
+    verdicts = SCHEMATHESIS_VERDICT.findall(output)
+    if not verdicts:
+        reasons = re.findall(rf"^>> {CONTRACT_LABEL}: (.+)$", output, re.MULTILINE)
+        cause = f": {reasons[-1]}" if reasons else ""
+        details = api_logs(output, CONTRACT_LABEL) or output
+        return Finding(Status.FAILED, f"Contract test did not run{cause}", tail(details), "Output")
+    checks = "; ".join(
+        f"{match['check']} ({match['count']})" for match in SCHEMATHESIS_FAILURE.finditer(output)
+    )
+    summary = f"{verdicts[-1]}: {checks}" if checks else verdicts[-1]
+    return Finding(
+        Status.FAILED,
+        f"{summary} · {schemathesis_scope(output)}",
+        schemathesis_details(output),
+        "Failures (reproduce with `make contract`)",
+    )
+
+
 @dataclass(frozen=True)
 class Survivor:
     file: str
@@ -464,6 +528,7 @@ ANALYZERS: dict[Analysis, Callable[[Fragment], Finding]] = {
     Analysis.SMOKE: analyze_smoke,
     Analysis.MUTATION: analyze_mutation,
     Analysis.SUPPRESSIONS: analyze_suppressions,
+    Analysis.SCHEMATHESIS: analyze_schemathesis,
 }
 
 

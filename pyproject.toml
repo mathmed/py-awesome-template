@@ -30,6 +30,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "pytest-mock>=3.16.0",
     "ruff>=0.16.9",
+    "schemathesis>=4.31.1",
     "vulture>=2.16",
     "xenon>=0.9.3",
 ]

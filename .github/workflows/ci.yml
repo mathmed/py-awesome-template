@@ -191,6 +191,27 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Boots the API like the smoke job: give it the same services when you add dependencies.
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: API contract (schemathesis)
+        run: uv run --locked python scripts/quality_report.py run schemathesis -- ./scripts/contract.sh
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: quality-fragment-contract
+          path: quality-fragments/
+          if-no-files-found: ignore
+          retention-days: 7
+
   tests:
     runs-on: ubuntu-latest
     permissions:
@@ -234,7 +255,7 @@ jobs:
 
   quality-report:
     if: always() && github.event_name == 'pull_request'
-    needs: [lint, types, security, dead-code, complexity, suppressions, lint-imports, smoke, tests, mutation]
+    needs: [lint, types, security, dead-code, complexity, suppressions, lint-imports, smoke, contract, tests, mutation]
     runs-on: ubuntu-latest
     permissions:
       contents: read

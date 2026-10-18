@@ -17,7 +17,7 @@ A production-ready starting point for Python 3.14 APIs with FastAPI: a layered f
 - **CI**: every pull request runs all checks and posts a single **Quality Report** comment with the result of every analysis (see [Quality Report](#quality-report)).
 - **Dependabot**: weekly grouped updates for Python dependencies and GitHub Actions.
 - **Production basics**: typed settings ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)), JSON logs in production, configurable CORS, domain errors mapped to HTTP status codes and `/health` (liveness) and `/ready` (readiness) routes.
-- **Deterministic validation for AI-generated code**: a boot smoke test, architecture contracts, mutation testing and a suppression ratchet, with the pipeline files protected by `CODEOWNERS` (see [Validation layers](#validation-layers)).
+- **Deterministic validation for AI-generated code**: a boot smoke test, API contract tests (Schemathesis), architecture contracts, mutation testing and a suppression ratchet, with the pipeline files protected by `CODEOWNERS` (see [Validation layers](#validation-layers)).
 - **Docker**: a `dev` stage with hot reload and a slim, non-root `production` stage with healthcheck.
 - **AI-ready**: `CLAUDE.md`/`AGENTS.md` with the project rules, Claude Code agents (`coder`, `reviewer`), permissions and a hook that formats every file the agent edits.
 
@@ -48,6 +48,7 @@ curl "http://localhost:8000/example?field1=hello"
 | `make test-unit`   | Run only the unit tests.                                                |
 | `make hooks`       | Run all quality checks (ruff, mypy, bandit, vulture, xenon, import-linter, suppressions, pip-audit). |
 | `make smoke`       | Boot the real API and call `/health` and `/ready`.                      |
+| `make contract`    | Boot the real API and run Schemathesis against its OpenAPI schema.      |
 | `make lint-imports` | Check the architecture contracts (import-linter).                      |
 | `make mutation`    | Mutation testing of the domain (slow); `make mutation-results` lists survivors. |
 | `make suppressions` | Fail when the suppressions differ from `suppressions-baseline.json`.   |
@@ -86,6 +87,16 @@ The template has no database, so `/ready` reports `{"status": "ready", "dependen
 4. **Point the app at the dependencies**: put the variables (e.g. `DATABASE_URL`) in `.env.example`; the smoke test boots with exactly that file (`SMOKE_ENV_FILE` picks another one), so no test-only environment hides a broken configuration.
 
 Other options: `SMOKE_PORT` (default `18000`), `SMOKE_TIMEOUT` (default `30` seconds) and `SMOKE_ENV` (default `production`).
+
+The boot itself (environment file, dependencies, migrations, uvicorn, wait for `/health`, cleanup) lives in `scripts/api_server.sh`, which `scripts/smoke.sh` and `scripts/contract.sh` source, so both checks boot the API the same way and accept the same `SMOKE_*` options.
+
+### API contract tests (`make contract`)
+
+`scripts/contract.sh` boots the API like the smoke test and runs [Schemathesis](https://schemathesis.readthedocs.io/) against `/openapi.json` with every check (`--checks all`): no 5xx, documented status codes, content types, headers and response schemas, invalid input rejected and valid input accepted. It generates the requests from the schema FastAPI publishes, so a route that returns something it does not declare, or crashes on an input its signature accepts, fails here even when its unit tests pass.
+
+The pass is bounded and reproducible: one worker, a fixed seed and no example database, so the same code always sends the same requests and a CI failure reproduces locally with `make contract`. Options: `CONTRACT_MAX_EXAMPLES` (test cases per operation and phase, default `50`), `CONTRACT_SEED` (default `1`; change it locally to explore other inputs) and `CONTRACT_REQUEST_TIMEOUT` (seconds per request, default `5`). Extra arguments go to `schemathesis run`, e.g. authentication for protected routes: `./scripts/contract.sh --header "Authorization: Bearer $TOKEN"`. It runs as the `contract` CI job and blocks the PR. On failure the Quality Report shows each failing operation with a `curl` to reproduce it and the API logs.
+
+When it fails, fix the route or declare the response it really returns (`responses=` on the route); do not exclude checks or operations to make it pass.
 
 ### Architecture contracts (`make lint-imports`)
 
@@ -175,6 +186,7 @@ Every pull request gets **one** comment (marker `<!-- quality-report -->`, updat
 | Tests and coverage | pytest + coverage | `tests` | passed/failed/total, coverage vs. minimum |
 | Architecture | import-linter | `lint-imports` | contracts kept/broken; broken contract and violating import |
 | Boot smoke | `scripts/smoke.sh` | `smoke` | booted?, `/health` and `/ready`, time to healthy; API logs only on failure |
+| API contract | Schemathesis (`scripts/contract.sh`) | `contract` | test cases, operations and seed; on failure the failing checks, a `curl` per failure and the API logs |
 | Mutation testing | mutmut (`mutation.yml`) | `mutation` | score vs. threshold, killed/survivors, survivors by file/function |
 
 **How it works.** Each analysis job runs its tool through `scripts/quality_report.py run <analysis> -- <command>`. The wrapper streams the output, returns the tool's own exit code (the job is still the gate; the report never decides what blocks) and saves a *fragment* `quality-fragments/<analysis>.json`, which the job uploads as the `quality-fragment-<job>` artifact. The final `quality-report` job (`needs` every analysis, `if: always()`, only on PRs, `pull-requests: write`) downloads the fragments, runs `scripts/quality_report.py render` and upserts the comment. A job that failed, was cancelled or produced no fragment appears as ❌ / ⏭️ instead of breaking the report. The report is also written to the job summary, which is the fallback for PRs from forks, where the token is read-only and posting the comment only emits a warning (this fork path is not validated by the PR that introduced it).
@@ -248,6 +260,8 @@ Create an empty `.local_dev` file at the root to work directly on your local bra
 | `.python-version`            | Python version used by uv.                                              |
 | `.pre-commit-config.yaml`    | Git hooks running all quality checks.                                   |
 | `scripts/smoke.sh`           | Boot smoke test (`make smoke`).                                         |
+| `scripts/contract.sh`        | Schemathesis contract test (`make contract`).                           |
+| `scripts/api_server.sh`      | API boot shared by the smoke and contract tests.                        |
 | `.github/workflows/mutation.yml` | Mutation testing on PRs (changed files), weekly and on demand.      |
 | `scripts/mutation.py`        | Mutation target selection, summary and score gate.                      |
 | `scripts/quality_report.py`  | Runs analyses as CI fragments and renders the single Quality Report.    |

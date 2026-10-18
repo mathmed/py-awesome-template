@@ -167,6 +167,9 @@ cython_debug/
 .local_dev
 mutants/
 
+# Schemathesis local cache (crash replay)
+.schemathesis/
+
 # Quality report fragments (scripts/quality_report.py)
 quality-fragments/
 quality-report.md
