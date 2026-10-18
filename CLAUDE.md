@@ -19,6 +19,8 @@ make hooks        # all quality checks: ruff, mypy, bandit, vulture, xenon, impo
 make smoke        # boots the real API and calls /health and /ready
 make contract     # boots the real API and runs Schemathesis against its OpenAPI schema
 make openapi-diff # fails on breaking OpenAPI changes vs BASE (default origin/main); needs oasdiff
+make risk-floor   # minimum risk level of the branch vs BASE, from .github/risk-floors.yaml
+make risk-labels  # create/update the risk:<level> labels on GitHub
 make lint-imports # architecture contracts (import-linter)
 make mutation     # mutation testing of the whole domain (slow; weekly in CI)
 make mutation-changed # mutation testing of only the domain files changed vs BASE (default origin/main); runs on every PR

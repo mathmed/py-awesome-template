@@ -50,6 +50,8 @@ curl "http://localhost:8000/example?field1=hello"
 | `make smoke`       | Boot the real API and call `/health` and `/ready`.                      |
 | `make contract`    | Boot the real API and run Schemathesis against its OpenAPI schema.      |
 | `make openapi-diff` | Fail on breaking OpenAPI changes against `BASE` (default `origin/main`). |
+| `make risk-floor`  | Print the minimum risk level of the changes against `BASE`.             |
+| `make risk-labels` | Create or update the `risk:<level>` labels on GitHub (needs `gh`).      |
 | `make lint-imports` | Check the architecture contracts (import-linter).                      |
 | `make mutation`    | Mutation testing of the domain (slow); `make mutation-results` lists survivors. |
 | `make suppressions` | Fail when the suppressions differ from `suppressions-baseline.json`.   |
@@ -182,6 +184,20 @@ It runs as a pre-commit hook, in `make hooks` and as the `suppressions` CI job. 
 >
 > GitHub never counts the author's own approval. If agents open PRs with the code owner's own account (for example through the owner's `gh` token), the setting blocks those PRs unless the owner is in the ruleset bypass list, and a bypass also lets anything using that token skip it. For a real gate, let agents push and open PRs with a separate identity (a machine user or a GitHub App) and keep the owner as code owner.
 
+### Risk floors and the risk label
+
+Every PR carries exactly one `risk:low`, `risk:medium`, `risk:high` or `risk:critical` label, assigned by the `pr-writer` agent when it opens the PR (see [Pull request flow](#pull-request-flow)). Some files set a minimum: `.github/risk-floors.yaml` lists, per category, the globs that put a PR at least at that level. It starts with three categories, all `high`:
+
+| Category | Paths |
+| --- | --- |
+| pipeline config | `pyproject.toml`, `.pre-commit-config.yaml`, `Makefile`, `suppressions-baseline.json`, `scripts/**`, `.github/**`, `.claude/**`, `CLAUDE.md`, `AGENTS.md` |
+| migrations | `**/migrations/**`, `**/alembic/**`, `alembic.ini` |
+| auth | `**/*auth*`, `**/*permission*` (files and directories) |
+
+`make risk-floor` prints the floor of the current branch and the files behind it; the `pr-writer` agent runs the same command, so the agent and CI agree. The **Risk label** workflow (`.github/workflows/risk-label.yml`) runs `scripts/risk.py check` on every push and every label change and fails when the PR has no risk label, more than one, an unknown one, or one below the floor. It is a separate workflow so that changing a label does not re-run the whole CI, and for that reason it is not part of the Quality Report. The second floor rule (any deploy step other than "None" is at least `medium`) depends on the PR description, so only the agent applies it.
+
+Create the labels once with `make risk-labels` (idempotent: `gh label create --force`). Dependabot PRs get `risk:high` through `labels` in `.github/dependabot.yaml`, since they touch `pyproject.toml` or the workflows. To add a category, append an entry with `category`, `level` and `paths` to the YAML file; the check picks it up on the next run.
+
 ## Quality Report
 
 Every pull request gets **one** comment (marker `<!-- quality-report -->`, updated in place on every push) with the verdict, a status table and a section per analysis: ✅ ok, ⚠️ warning, ❌ failed, ⏭️ not run (job cancelled/skipped, or nothing to do, e.g. no domain file changed for mutation testing). Long output goes inside collapsible `<details>`.
@@ -281,6 +297,9 @@ Create an empty `.local_dev` file at the root to work directly on your local bra
 | `scripts/suppressions.py`    | Suppression ratchet (`make suppressions`).                              |
 | `suppressions-baseline.json` | Committed suppression counts per file and kind.                         |
 | `.github/CODEOWNERS`         | Owner review for the pipeline and agent files (needs the ruleset setting). |
+| `.github/risk-floors.yaml`   | Minimum risk level per file category, read by `scripts/risk.py` and the `pr-writer` agent. |
+| `scripts/risk.py`            | Risk floor of a diff and the risk label check (`make risk-floor`).      |
+| `.github/workflows/risk-label.yml` | Fails PRs without a single risk label at or above the floor.      |
 | `.env.example`               | Environment variables template.                                         |
 | `.github/workflows/ci.yml`   | CI pipeline: one job per analysis plus the `quality-report` job.        |
 | `.github/dependabot.yaml`    | Dependency updates.                                                     |

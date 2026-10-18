@@ -1,0 +1,35 @@
+name: Risk label
+
+# Checks that the PR has exactly one risk:<level> label and that it is not below the floor of the files it
+# touches (.github/risk-floors.yaml, evaluated by scripts/risk.py). It lives outside ci.yml because it must
+# also run when labels change, which would otherwise re-run every analysis; for the same reason it is not
+# part of the Quality Report. The pr-writer agent applies the label when it opens the PR.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: risk-label-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  risk-label:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Risk label is at or above the floor
+        env:
+          # Passed through the environment, never interpolated into the script
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          BASE_REF: origin/${{ github.base_ref }}
+        run: uv run --locked python scripts/risk.py --base "$BASE_REF" check --labels-json "$PR_LABELS"
