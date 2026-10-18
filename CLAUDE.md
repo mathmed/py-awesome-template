@@ -109,7 +109,9 @@ tests/integration/ HTTP tests with TestClient
    original task verbatim, the branch, the base branch and the path of the handoff notes. It reads the diff
    cold, commit by commit, fills `.github/pull_request_template.md`, assigns the risk level (never below
    `make risk-floor`, at least medium when there are deploy steps), opens the PR with the `risk:<level>`
-   label and stops. It never writes code.
+   label and stops. It never writes code. Behavior items are plain language with no file, function, test
+   or code references; the evidence pointers for them go only in **Look here**, and a behavior without
+   evidence is listed under **Not verified**.
 3. **Fallback**: if `pr-writer` fails or cannot run, delegate back to `coder` saying so: it opens the PR
    itself with a minimal body (summary plus the template headings, risk "unassessed", no risk label), so a
    failure never blocks delivery. The Risk label check stays red until a person sets the label.

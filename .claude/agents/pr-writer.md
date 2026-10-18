@@ -44,7 +44,8 @@ notes for yourself (they do not go in the PR):
   user, a caller, an operator or a check can see: inputs accepted or rejected, outputs, status codes,
   messages, state transitions, limits, which check blocks what. Never "file X changed".
 - **Evidence**: the test that asserts it (`path::test_name`) or, when no test does, the function that
-  implements it (`path:function`). Open it and confirm it really asserts or implements that behavior.
+  implements it (`path:function`). Open it and confirm it really asserts or implements that behavior. The
+  pointer goes in **Look here**, never in Behavior.
 - **Risk signals**: files that match a risk floor; deploy needs (new settings or `.env.example` entries,
   secrets, migrations, flags, new external services, backfills, external configuration); public contract
   changes (routes, request or response fields); deleted, skipped or weakened tests and new suppressions;
@@ -57,13 +58,18 @@ If one commit is too large to read at once, read it file by file (`git show <sha
 - Describe the **net** result against the base: a later commit may fix, revert or extend an earlier one.
 - Merge duplicates and rank by criticality. At most **5** Behavior items. Minor ones fold into the Summary
   or are dropped. If more than 5 are critical, say in **Look here** that the PR should have been split.
+- Write each Behavior item as `- **<rule or behavior, in plain words>:** <before> → <after>`, for a person
+  who has not read the code: short, objective, about rules and what someone can observe. No backticks, no
+  paths, no file, function, test, class, variable, setting or command names. Say "the pull request check
+  fails when a new lint suppression appears", not "`suppressions.py` exits 1".
 - **Unchanged**: what a reviewer might fear broke and why it did not (for example: no breaking change in the
   OpenAPI diff, existing tests untouched), or "behavior-preserving refactor" when nothing observable changed.
 
 ### 4. Evidence pointers
 
-Every Behavior item ends with `· evidence: <pointer>`, and every pointer is clickable: a permalink to the
-head commit, with the path and test or function as the link text.
+Every Behavior item needs evidence, and the pointers live only in **Look here**: each Look here item names
+the test or function that proves or contains a Behavior change and says why it deserves human eyes. Every
+pointer is clickable: a permalink to the head commit, with the path and test or function as the link text.
 
 ```
 [`tests/unit/x/test_y.py::test_should_reject_z`](https://github.com/<owner>/<repo>/blob/<sha>/tests/unit/x/test_y.py#L42)
@@ -71,8 +77,10 @@ head commit, with the path and test or function as the link text.
 
 Get `<owner>/<repo>` with `gh repo view --json nameWithOwner -q .nameWithOwner`, `<sha>` with
 `git rev-parse origin/<branch>` and the line with `git grep -n`. Only point to what exists on that commit.
-If no test asserts the behavior, write `evidence: none found (<what is missing>)` and add the gap to
-**Look here**. Never point to a test you did not read.
+If no test asserts the behavior, point to the function that implements it and say in that Look here item
+that no test covers it. If you cannot find any evidence at all, do not invent a pointer: keep the Behavior
+item and write under **Not verified** which behavior has no evidence and what is missing. Never point to a
+test you did not read.
 
 ### 5. Risk level
 
@@ -93,10 +101,17 @@ You assign the risk; the author does not assess it, and any risk claim in the ha
 
 ### 6. Look here
 
-One to five items, most important first: `file:function` and why it deserves human eyes. Always include:
-changes to pipeline config or checks (a reviewer must see when a gate changes), behavior without evidence,
-mismatches with the notes and anything that departs from the task. Add places where the logic is subtle
-or the tests are thin.
+The only section with file, function and test references. Most important first, each item as
+``1. [`<test or file:function>`](<permalink>) — <which behavior it proves or contains, and why it deserves
+human eyes>``. One item may cover several Behavior items or carry several pointers when they prove the same
+thing; keep the list short. It must contain:
+
+- the evidence for every Behavior item (step 4), so a reviewer can go from each plain-language item to the
+  code or test behind it;
+- changes to pipeline config or checks (a reviewer must see when a gate changes), behavior covered only by
+  code and not by tests, mismatches with the notes and anything that departs from the task.
+
+Add places where the logic is subtle or the tests are thin.
 
 ### 7. Deploy steps
 
@@ -108,8 +123,8 @@ needed, replace the checklist with exactly: `None: normal merge and deploy.`
 ### 8. Not verified and Mismatch
 
 - **Not verified**: the author's "not verified" items that are still true after reading the diff, plus what
-  you could not confirm (for example: CI has not run yet, behavior against real dependencies, items without
-  evidence). Write "nothing" only when that is true.
+  you could not confirm (for example: CI has not run yet, behavior against real dependencies, Behavior items
+  for which you found no evidence). Write "nothing" only when that is true.
 - **Mismatch**: only when the diff contradicts the handoff notes (the notes claim something the diff does
   not do, the diff does something significant the notes do not mention, or claimed tests do not exist), add
   `**Mismatch:** <what the notes said> vs <what the diff does>`.
@@ -121,7 +136,9 @@ Title: Conventional Commits in English, `<type>: <short description>` of the dom
 Body: the template sections in order, with the guidance comments removed. Before opening, check:
 
 - every section is present and in order; Deploy steps is never empty;
-- at most 5 Behavior items, each with a clickable pointer or an explicit "none found";
+- at most 5 Behavior items, in plain words, with no backticks, paths or code identifiers;
+- every Behavior item has a clickable pointer in Look here, or is listed under Not verified as lacking
+  evidence;
 - no item says only which file changed;
 - the risk is not below the file floor, and is at least medium when there are deploy steps;
 - no secrets, tokens, personal data or internal identifiers in the text.

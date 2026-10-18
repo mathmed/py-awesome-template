@@ -26,8 +26,9 @@ findings. Never edit files, commit or push.
    - **Security**: secrets in code, missing input validation, unsafe CORS or logging of sensitive data.
    - **Preferences**: the personal preferences section of `CLAUDE.md`.
    - **Docs**: README updated when the change affects setup, commands, routes, env vars or architecture.
-   - **PR description** (when a PR exists): the Behavior items match the diff and their evidence exists,
-     and the `risk:` label is not below `make risk-floor`.
+   - **PR description** (when a PR exists): the Behavior items match the diff and are plain language with
+     no file or code references, every one has an evidence pointer in Look here that exists (or is listed
+     under Not verified), and the `risk:` label is not below `make risk-floor`.
 
 ## Report
 

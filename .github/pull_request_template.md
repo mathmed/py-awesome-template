@@ -6,13 +6,18 @@
 <one sentence: what changes in behavior, and why>
 
 ## Behavior
-<!-- max 5, most critical first. Business rules and observable behavior, not code. -->
-- **<rule or behavior>:** <before> → <after> · evidence: `<test or file:function>`
+<!-- Max 5, most critical first. Plain words for a person who has not read the code: rules and observable
+behavior, short and objective. No backticks, paths, file, function or test names: evidence goes in Look here. -->
+- **<rule or behavior, in plain words>:** <before> → <after>
 
 **Unchanged:** <what a reviewer might fear broke, or "behavior-preserving refactor">
 
 ## Look here
-1. `<file:function>` — <why it deserves human eyes>
+<!-- Most important first. The only place for file, function and test references. Every Behavior item has its
+evidence here: the test that asserts it, or the code that implements it when no test does (one item may
+cover several Behavior items). Each item says which behavior it proves or contains and why it deserves human
+eyes. Also list changes to pipeline config or checks, mismatches and anything that departs from the task. -->
+1. `<test or file:function>` — <which behavior it proves or contains, and why it deserves human eyes>
 
 ## Deploy steps
 <!-- Always present. If nothing is needed, write: None: normal merge and deploy. -->

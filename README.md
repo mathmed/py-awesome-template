@@ -278,8 +278,10 @@ Reading AI-written diffs is the bottleneck, so the PR description tells the revi
 2. **`pr-writer`** (Opus) gets the task, the branch and the notes. It reads the diff commit by commit, writes behavior items per commit and aggregates them, and fills `.github/pull_request_template.md`:
    - **Risk**: `low | medium | high | critical` with one line of why. It assigns the level itself, never below `make risk-floor` (pipeline config, migrations and auth are `high`), and at least `medium` when there are deploy steps;
    - **Summary**: one sentence on what changes in behavior and why;
-   - **Behavior**: at most five *before → after* items about rules and observable behavior, never "file X changed", each with a clickable permalink to the test or function that proves it, or "none found";
-   - **Unchanged**, **Look here** (what deserves human eyes), **Deploy steps** (always present; "None: normal merge and deploy." when nothing is needed) and an honest **Not verified**, plus a **Mismatch** line when the diff contradicts the handoff notes.
+   - **Behavior**: at most five *before → after* items about rules and observable behavior, in plain words for someone who has not read the code: no file, function, test or code references;
+   - **Unchanged**;
+   - **Look here**: the only section with file references. Each item is a clickable permalink to the test or function that proves or contains a behavior change, and why it deserves human eyes. Every Behavior item has its evidence here; one without evidence goes under **Not verified** instead of getting an invented pointer;
+   - **Deploy steps** (always present; "None: normal merge and deploy." when nothing is needed) and an honest **Not verified**, plus a **Mismatch** line when the diff contradicts the handoff notes.
 
    It opens the PR with the `risk:<level>` label (creating the labels if missing) and stops.
 3. **Fallback**: if `pr-writer` fails, `coder` opens the PR with a minimal body (summary plus the template headings, risk "unassessed", no label), so a failure never blocks delivery; the [Risk label](#risk-floors-and-the-risk-label) check stays red until a person sets the label.
