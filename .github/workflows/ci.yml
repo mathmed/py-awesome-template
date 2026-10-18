@@ -212,6 +212,46 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  openapi-diff:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # oasdiff is a Go binary, not tracked by Dependabot: bump the version and the sha256 of
+      # oasdiff_<version>_linux_amd64.tar.gz (from the release's checksums.txt) together.
+      OASDIFF_VERSION: "1.33.0"
+      OASDIFF_SHA256: "43a4e328e2d13ba1552d760aa68d2485c75c5621f309f6ff64ae895188345247"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The base schema is exported from the merge base with the PR's base branch
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked --no-dev
+      - name: Install oasdiff
+        run: |
+          archive="$RUNNER_TEMP/oasdiff.tar.gz"
+          curl --fail --silent --show-error --location --output "$archive" \
+            "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+          echo "${OASDIFF_SHA256}  ${archive}" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/oasdiff"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/oasdiff" oasdiff
+          echo "$RUNNER_TEMP/oasdiff" >> "$GITHUB_PATH"
+      - name: Breaking API changes (oasdiff)
+        run: >-
+          uv run --locked --no-dev python scripts/quality_report.py run oasdiff --
+          uv run --locked --no-dev python scripts/openapi.py diff --base "origin/${{ github.base_ref }}"
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: quality-fragment-openapi-diff
+          path: quality-fragments/
+          if-no-files-found: ignore
+          retention-days: 7
+
   tests:
     runs-on: ubuntu-latest
     permissions:
@@ -255,7 +295,7 @@ jobs:
 
   quality-report:
     if: always() && github.event_name == 'pull_request'
-    needs: [lint, types, security, dead-code, complexity, suppressions, lint-imports, smoke, contract, tests, mutation]
+    needs: [lint, types, security, dead-code, complexity, suppressions, lint-imports, smoke, contract, openapi-diff, tests, mutation]
     runs-on: ubuntu-latest
     permissions:
       contents: read

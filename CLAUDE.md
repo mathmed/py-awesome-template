@@ -18,6 +18,7 @@ make test-unit    # only the fast unit tests
 make hooks        # all quality checks: ruff, mypy, bandit, vulture, xenon, import-linter, suppressions, pip-audit
 make smoke        # boots the real API and calls /health and /ready
 make contract     # boots the real API and runs Schemathesis against its OpenAPI schema
+make openapi-diff # fails on breaking OpenAPI changes vs BASE (default origin/main); needs oasdiff
 make lint-imports # architecture contracts (import-linter)
 make mutation     # mutation testing of the whole domain (slow; weekly in CI)
 make mutation-changed # mutation testing of only the domain files changed vs BASE (default origin/main); runs on every PR
@@ -85,6 +86,10 @@ tests/integration/ HTTP tests with TestClient
   `/openapi.json`: responses must match the documented status codes and schemas, invalid input must be
   rejected and nothing may return a 5xx. Fix the route or document the response (`responses=` in the
   route), never exclude the check or the operation.
+- `make openapi-diff` exports the OpenAPI schema of HEAD and of the merge base with the base branch and runs
+  `oasdiff changelog --fail-on ERR`: removing or renaming a route, a response field or making a parameter
+  required fails the PR. Public contracts only grow additively; a deliberate breaking change needs the
+  user's explicit approval and is called out in the PR.
 - Mutation testing runs on every PR (`Mutation testing` workflow, only the domain files changed in the diff)
   and weekly on the whole domain. The job fails when the score of the mutated scope is below
   `MUTATION_MIN_SCORE` (repository variable, default 90). Surviving mutants are listed in the run summary

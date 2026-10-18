@@ -1,4 +1,7 @@
-.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code smoke lint-imports mutation mutation-changed mutation-results suppressions suppressions-update contract
+# Base branch used by mutation-changed and openapi-diff
+BASE ?= origin/main
+
+.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code smoke lint-imports mutation mutation-changed mutation-results suppressions suppressions-update contract openapi-diff
 
 # Install uv (if missing), project dependencies and git hooks
 setup:
@@ -55,6 +58,10 @@ smoke:
 contract:
 	./scripts/contract.sh
 
+# Fail on breaking changes between the OpenAPI schema of HEAD and of BASE (needs oasdiff, see the README)
+openapi-diff:
+	uv run python scripts/openapi.py diff --base $(BASE)
+
 # Check the architecture contracts in pyproject.toml ([tool.importlinter])
 lint-imports:
 	uv run lint-imports
@@ -65,7 +72,6 @@ mutation:
 	uv run python scripts/mutation.py report
 
 # Mutation testing only of the domain files changed against BASE (what the PR job runs)
-BASE ?= origin/main
 mutation-changed:
 	uv run python scripts/mutation.py changed --base $(BASE)
 

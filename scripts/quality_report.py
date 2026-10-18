@@ -35,6 +35,7 @@ class Analysis(StrEnum):
     MUTATION = "mutation"
     SUPPRESSIONS = "suppressions"
     SCHEMATHESIS = "schemathesis"
+    OASDIFF = "oasdiff"
 
 
 class Status(StrEnum):
@@ -111,6 +112,7 @@ SECTIONS = [
     Section("Architecture (import-linter)", "lint-imports", (Analysis.IMPORT_LINTER,)),
     Section("Boot smoke (/health and /ready)", "smoke", (Analysis.SMOKE,)),
     Section("API contract (schemathesis)", "contract", (Analysis.SCHEMATHESIS,)),
+    Section("Breaking API changes (oasdiff)", "openapi-diff", (Analysis.OASDIFF,)),
     Section("Mutation testing (mutmut)", "mutation", (Analysis.MUTATION,)),
 ]
 
@@ -367,6 +369,47 @@ def analyze_schemathesis(fragment: Fragment) -> Finding:
     )
 
 
+OASDIFF_COUNTS = re.compile(
+    r"^(?P<total>\d+) changes?: (?P<errors>\d+) error, (?P<warnings>\d+) warning, \d+ info$",
+    re.MULTILINE,
+)
+OASDIFF_ENTRY = re.compile(
+    r"^(?P<level>error|warning|info)\t\[(?P<rule>[^\]]+)\][^\n]*\n\tin (?P<where>[^\n]+)\n"
+    r"\t\t(?P<text>[^\n]+)",
+    re.MULTILINE,
+)
+
+
+def oasdiff_listing(output: str) -> str:
+    return "\n".join(
+        f"{m['level']:7} {m['where']}: {m['text']} [{m['rule']}]"
+        for m in OASDIFF_ENTRY.finditer(output)
+    )
+
+
+def analyze_oasdiff(fragment: Fragment) -> Finding:
+    output = clean(fragment.output)
+    if fragment.passed and "No changes detected" in output:
+        return Finding(Status.OK, "No API changes")
+    counts = OASDIFF_COUNTS.search(output)
+    errors = int(counts["errors"]) if counts else 0
+    if counts is None or (errors == 0 and not fragment.passed):
+        return Finding(Status.FAILED, "OpenAPI diff failed before comparing", tail(output))
+    total, warnings = int(counts["total"]), int(counts["warnings"])
+    listing = tail(oasdiff_listing(output))
+    if errors:
+        summary = f"{plural(errors, 'breaking change', 'breaking changes')} out of {total}"
+        return Finding(Status.FAILED, summary, listing, "API changes")
+    if warnings:
+        summary = (
+            f"{plural(warnings, 'possible breaking change', 'possible breaking changes')} "
+            f"(warning) out of {total}"
+        )
+        return Finding(Status.WARNING, summary, listing, "API changes")
+    summary = f"{plural(total, 'API change', 'API changes')}, none breaking"
+    return Finding(Status.OK, summary, listing, "API changes")
+
+
 @dataclass(frozen=True)
 class Survivor:
     file: str
@@ -529,6 +572,7 @@ ANALYZERS: dict[Analysis, Callable[[Fragment], Finding]] = {
     Analysis.MUTATION: analyze_mutation,
     Analysis.SUPPRESSIONS: analyze_suppressions,
     Analysis.SCHEMATHESIS: analyze_schemathesis,
+    Analysis.OASDIFF: analyze_oasdiff,
 }
 
 

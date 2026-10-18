@@ -12,6 +12,7 @@ from scripts.quality_report import (
     analyze_bandit,
     analyze_import_linter,
     analyze_mutation,
+    analyze_oasdiff,
     analyze_pytest,
     analyze_schemathesis,
     analyze_smoke,
@@ -119,6 +120,29 @@ SCHEMATHESIS_NOT_STARTED = """>> starting the API on http://127.0.0.1:18000 (ENV
 ValidationError: env
 """
 
+OASDIFF_NO_CHANGES = """Comparing the OpenAPI schema of HEAD with origin/main (merge base 6a0421faff05)
+No changes detected
+"""
+OASDIFF_BREAKING = """Comparing the OpenAPI schema of HEAD with origin/main (merge base 6a0421faff05)
+3 changes: 1 error, 1 warning, 1 info
+error\t[request-parameter-became-required] at head.openapi.json
+\tin API GET /example
+\t\tthe `query` request parameter `field1` became required
+
+warning\t[response-property-became-optional] at head.openapi.json
+\tin API GET /ready
+\t\tthe response property `status` became optional
+
+info\t[endpoint-added] at head.openapi.json
+\tin API GET /items
+\t\tendpoint added
+"""
+OASDIFF_INFO_ONLY = """1 change: 0 error, 0 warning, 1 info
+info\t[endpoint-added] at head.openapi.json
+\tin API GET /items
+\t\tendpoint added
+"""
+
 
 def mutation_output(score: float, survivors: list[dict[str, str]], skipped: bool = False) -> str:
     payload = {
@@ -157,6 +181,7 @@ def all_ok_fragments() -> dict[Analysis, Fragment]:
         Analysis.MUTATION: mutation_output(100.0, []),
         Analysis.SUPPRESSIONS: SUPPRESSIONS_OK,
         Analysis.SCHEMATHESIS: SCHEMATHESIS_OK,
+        Analysis.OASDIFF: OASDIFF_NO_CHANGES,
     }
     return {analysis: fragment(analysis, outputs.get(analysis, "")) for analysis in Analysis}
 
@@ -261,6 +286,58 @@ class TestSchemathesis:
 
         assert finding.summary == "Contract test did not run"
         assert finding.details == "uv: not found"
+
+
+class TestOasdiff:
+    def test_should_report_no_api_changes(self) -> None:
+        finding = analyze_oasdiff(fragment(Analysis.OASDIFF, OASDIFF_NO_CHANGES))
+
+        assert finding.status == Status.OK
+        assert finding.summary == "No API changes"
+
+    def test_should_list_additive_changes_as_ok(self) -> None:
+        finding = analyze_oasdiff(fragment(Analysis.OASDIFF, OASDIFF_INFO_ONLY))
+
+        assert finding.status == Status.OK
+        assert finding.summary == "1 API change, none breaking"
+        assert finding.details == "info    API GET /items: endpoint added [endpoint-added]"
+
+    def test_should_fail_on_breaking_changes_and_list_every_change(self) -> None:
+        finding = analyze_oasdiff(fragment(Analysis.OASDIFF, OASDIFF_BREAKING, 1))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == "1 breaking change out of 3"
+        assert finding.details.splitlines() == [
+            "error   API GET /example: the `query` request parameter `field1` became required"
+            " [request-parameter-became-required]",
+            "warning API GET /ready: the response property `status` became optional"
+            " [response-property-became-optional]",
+            "info    API GET /items: endpoint added [endpoint-added]",
+        ]
+
+    def test_should_warn_on_possible_breaking_changes(self) -> None:
+        output = OASDIFF_BREAKING.replace("3 changes: 1 error", "3 changes: 0 error")
+
+        finding = analyze_oasdiff(fragment(Analysis.OASDIFF, output))
+
+        assert finding.status == Status.WARNING
+        assert finding.summary == "1 possible breaking change (warning) out of 3"
+
+    @pytest.mark.parametrize(
+        ("output", "exit_code"),
+        [
+            ("oasdiff not found (oasdiff): install it, see the README", 127),
+            ("`git merge-base origin/x HEAD` failed", 1),
+            ("1 change: 0 error, 0 warning, 1 info\npanic: boom", 2),
+            ("something unexpected", 0),
+        ],
+    )
+    def test_should_fail_when_the_diff_did_not_complete(self, output: str, exit_code: int) -> None:
+        finding = analyze_oasdiff(fragment(Analysis.OASDIFF, output, exit_code))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == "OpenAPI diff failed before comparing"
+        assert output in finding.details
 
 
 class TestMutation:

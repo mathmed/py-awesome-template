@@ -17,7 +17,7 @@ A production-ready starting point for Python 3.14 APIs with FastAPI: a layered f
 - **CI**: every pull request runs all checks and posts a single **Quality Report** comment with the result of every analysis (see [Quality Report](#quality-report)).
 - **Dependabot**: weekly grouped updates for Python dependencies and GitHub Actions.
 - **Production basics**: typed settings ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)), JSON logs in production, configurable CORS, domain errors mapped to HTTP status codes and `/health` (liveness) and `/ready` (readiness) routes.
-- **Deterministic validation for AI-generated code**: a boot smoke test, API contract tests (Schemathesis), architecture contracts, mutation testing and a suppression ratchet, with the pipeline files protected by `CODEOWNERS` (see [Validation layers](#validation-layers)).
+- **Deterministic validation for AI-generated code**: a boot smoke test, API contract tests (Schemathesis), breaking-change detection on the OpenAPI schema (oasdiff), architecture contracts, mutation testing and a suppression ratchet, with the pipeline files protected by `CODEOWNERS` (see [Validation layers](#validation-layers)).
 - **Docker**: a `dev` stage with hot reload and a slim, non-root `production` stage with healthcheck.
 - **AI-ready**: `CLAUDE.md`/`AGENTS.md` with the project rules, Claude Code agents (`coder`, `reviewer`), permissions and a hook that formats every file the agent edits.
 
@@ -49,6 +49,7 @@ curl "http://localhost:8000/example?field1=hello"
 | `make hooks`       | Run all quality checks (ruff, mypy, bandit, vulture, xenon, import-linter, suppressions, pip-audit). |
 | `make smoke`       | Boot the real API and call `/health` and `/ready`.                      |
 | `make contract`    | Boot the real API and run Schemathesis against its OpenAPI schema.      |
+| `make openapi-diff` | Fail on breaking OpenAPI changes against `BASE` (default `origin/main`). |
 | `make lint-imports` | Check the architecture contracts (import-linter).                      |
 | `make mutation`    | Mutation testing of the domain (slow); `make mutation-results` lists survivors. |
 | `make suppressions` | Fail when the suppressions differ from `suppressions-baseline.json`.   |
@@ -97,6 +98,16 @@ The boot itself (environment file, dependencies, migrations, uvicorn, wait for `
 The pass is bounded and reproducible: one worker, a fixed seed and no example database, so the same code always sends the same requests and a CI failure reproduces locally with `make contract`. Options: `CONTRACT_MAX_EXAMPLES` (test cases per operation and phase, default `50`), `CONTRACT_SEED` (default `1`; change it locally to explore other inputs) and `CONTRACT_REQUEST_TIMEOUT` (seconds per request, default `5`). Extra arguments go to `schemathesis run`, e.g. authentication for protected routes: `./scripts/contract.sh --header "Authorization: Bearer $TOKEN"`. It runs as the `contract` CI job and blocks the PR. On failure the Quality Report shows each failing operation with a `curl` to reproduce it and the API logs.
 
 When it fails, fix the route or declare the response it really returns (`responses=` on the route); do not exclude checks or operations to make it pass.
+
+### Breaking API changes (`make openapi-diff`)
+
+`scripts/openapi.py diff` compares the OpenAPI schema of `HEAD` with the one of the merge base with the base branch and runs [oasdiff](https://github.com/oasdiff/oasdiff) `changelog --fail-on ERR` on them. Removing an endpoint or a response field, making a parameter required or narrowing a type is an error and fails the PR; changes oasdiff classifies as warnings show up as ⚠️, and additive changes are listed for the reviewer in the Quality Report.
+
+Both schemas are generated, nothing is committed: the script imports `app.main.main` and dumps `app.openapi()` for `HEAD`, then checks the merge base out in a temporary `git worktree` and does the same there with that commit's own locked dependencies (`uv run --locked --no-dev`). A committed `openapi.json` would only add a file to keep in sync, and the merge base already is the reference the PR is merged into. Comparing with the merge base instead of the tip of the base branch keeps endpoints added to `main` after the branch was cut from showing up as removals.
+
+It runs as the `openapi-diff` CI job (PRs only, full history). CI downloads a pinned oasdiff release and verifies its sha256 (`OASDIFF_VERSION`/`OASDIFF_SHA256` in `ci.yml`; Dependabot does not track it, bump both together). Locally, install oasdiff (`brew install oasdiff`, `go install github.com/oasdiff/oasdiff@latest` or a [release binary](https://github.com/oasdiff/oasdiff/releases)) and run `make openapi-diff` (`BASE=origin/<branch>` to change the base; `uv run python scripts/openapi.py diff --oasdiff <path>` for a binary outside the `PATH`). To look at the schema itself: `uv run python scripts/openapi.py export --output openapi.json`.
+
+A breaking change is a deliberate product decision, not something to make pass: keep the old route or field, add the new one next to it and deprecate the old one.
 
 ### Architecture contracts (`make lint-imports`)
 
@@ -187,6 +198,7 @@ Every pull request gets **one** comment (marker `<!-- quality-report -->`, updat
 | Architecture | import-linter | `lint-imports` | contracts kept/broken; broken contract and violating import |
 | Boot smoke | `scripts/smoke.sh` | `smoke` | booted?, `/health` and `/ready`, time to healthy; API logs only on failure |
 | API contract | Schemathesis (`scripts/contract.sh`) | `contract` | test cases, operations and seed; on failure the failing checks, a `curl` per failure and the API logs |
+| Breaking API changes | oasdiff (`scripts/openapi.py`) | `openapi-diff` | breaking changes (❌), possible breaking changes (⚠️) and every API change with its endpoint |
 | Mutation testing | mutmut (`mutation.yml`) | `mutation` | score vs. threshold, killed/survivors, survivors by file/function |
 
 **How it works.** Each analysis job runs its tool through `scripts/quality_report.py run <analysis> -- <command>`. The wrapper streams the output, returns the tool's own exit code (the job is still the gate; the report never decides what blocks) and saves a *fragment* `quality-fragments/<analysis>.json`, which the job uploads as the `quality-fragment-<job>` artifact. The final `quality-report` job (`needs` every analysis, `if: always()`, only on PRs, `pull-requests: write`) downloads the fragments, runs `scripts/quality_report.py render` and upserts the comment. A job that failed, was cancelled or produced no fragment appears as ❌ / ⏭️ instead of breaking the report. The report is also written to the job summary, which is the fallback for PRs from forks, where the token is read-only and posting the comment only emits a warning (this fork path is not validated by the PR that introduced it).
@@ -262,6 +274,7 @@ Create an empty `.local_dev` file at the root to work directly on your local bra
 | `scripts/smoke.sh`           | Boot smoke test (`make smoke`).                                         |
 | `scripts/contract.sh`        | Schemathesis contract test (`make contract`).                           |
 | `scripts/api_server.sh`      | API boot shared by the smoke and contract tests.                        |
+| `scripts/openapi.py`         | OpenAPI export and breaking-change diff against the base branch (`make openapi-diff`). |
 | `.github/workflows/mutation.yml` | Mutation testing on PRs (changed files), weekly and on demand.      |
 | `scripts/mutation.py`        | Mutation target selection, summary and score gate.                      |
 | `scripts/quality_report.py`  | Runs analyses as CI fragments and renders the single Quality Report.    |
