@@ -50,6 +50,12 @@ repos:
         types: [python]
         pass_filenames: false
 
+      - id: suppressions
+        name: suppression ratchet (suppressions-baseline.json)
+        entry: uv run python scripts/suppressions.py check
+        language: system
+        pass_filenames: false
+
       - id: pip-audit
         name: pip-audit
         entry: uv run pip-audit

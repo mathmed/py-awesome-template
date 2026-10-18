@@ -1,4 +1,4 @@
-.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code smoke lint-imports mutation mutation-changed mutation-results
+.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code smoke lint-imports mutation mutation-changed mutation-results suppressions suppressions-update
 
 # Install uv (if missing), project dependencies and git hooks
 setup:
@@ -35,7 +35,7 @@ test:
 test-unit:
 	uv run pytest tests/unit
 
-# Run all quality checks (ruff, mypy, bandit, vulture, xenon, pip-audit)
+# Run all quality checks (ruff, mypy, bandit, vulture, xenon, import-linter, suppressions, pip-audit)
 hooks:
 	uv run pre-commit run --all-files
 
@@ -67,3 +67,11 @@ mutation-changed:
 
 mutation-results:
 	uv run mutmut results
+
+# Fail when the suppressions (noqa, type: ignore, nosec, skip...) differ from suppressions-baseline.json
+suppressions:
+	uv run python scripts/suppressions.py check
+
+# Lower the baseline after removing suppressions (refuses to raise it, see the README)
+suppressions-update:
+	uv run python scripts/suppressions.py update

@@ -1,0 +1,16 @@
+# Files that define the validation pipeline and the rules agents follow. A change to any of them can
+# weaken every other check, so it needs the owner's review.
+# This file only protects anything if the main branch ruleset requires code owner review
+# (see "Pipeline protection" in the README).
+
+/pyproject.toml                     @mathmed
+/.pre-commit-config.yaml            @mathmed
+/Makefile                           @mathmed
+/suppressions-baseline.json         @mathmed
+/scripts/                           @mathmed
+/.github/                           @mathmed
+/.github/pull_request_template.md   @mathmed
+/.claude/                           @mathmed
+/.claude/agents/                    @mathmed
+/CLAUDE.md                          @mathmed
+/AGENTS.md                          @mathmed

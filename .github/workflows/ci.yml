@@ -120,6 +120,27 @@ jobs:
           retention-days: 7
 
 
+  suppressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      # Standard library only: no dependency sync needed
+      - name: Suppression ratchet
+        run: >-
+          uv run --no-project python scripts/quality_report.py run suppressions --
+          uv run --no-project python scripts/suppressions.py check
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: quality-fragment-suppressions
+          path: quality-fragments/
+          if-no-files-found: ignore
+          retention-days: 7
+
+
   lint-imports:
     runs-on: ubuntu-latest
     steps:
@@ -213,7 +234,7 @@ jobs:
 
   quality-report:
     if: always() && github.event_name == 'pull_request'
-    needs: [lint, types, security, dead-code, complexity, lint-imports, smoke, tests, mutation]
+    needs: [lint, types, security, dead-code, complexity, suppressions, lint-imports, smoke, tests, mutation]
     runs-on: ubuntu-latest
     permissions:
       contents: read

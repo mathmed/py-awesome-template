@@ -17,7 +17,7 @@ A production-ready starting point for Python 3.14 APIs with FastAPI: a layered f
 - **CI**: every pull request runs all checks and posts a single **Quality Report** comment with the result of every analysis (see [Quality Report](#quality-report)).
 - **Dependabot**: weekly grouped updates for Python dependencies and GitHub Actions.
 - **Production basics**: typed settings ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)), JSON logs in production, configurable CORS, domain errors mapped to HTTP status codes and `/health` (liveness) and `/ready` (readiness) routes.
-- **Deterministic validation for AI-generated code**: a boot smoke test, architecture contracts and mutation testing (see [Validation layers](#validation-layers)).
+- **Deterministic validation for AI-generated code**: a boot smoke test, architecture contracts, mutation testing and a suppression ratchet, with the pipeline files protected by `CODEOWNERS` (see [Validation layers](#validation-layers)).
 - **Docker**: a `dev` stage with hot reload and a slim, non-root `production` stage with healthcheck.
 - **AI-ready**: `CLAUDE.md`/`AGENTS.md` with the project rules, Claude Code agents (`coder`, `reviewer`), permissions and a hook that formats every file the agent edits.
 
@@ -46,10 +46,12 @@ curl "http://localhost:8000/example?field1=hello"
 | `make build`       | Build the production Docker image.                                      |
 | `make test`        | Run all tests with coverage.                                            |
 | `make test-unit`   | Run only the unit tests.                                                |
-| `make hooks`       | Run all quality checks (ruff, mypy, bandit, vulture, xenon, import-linter, pip-audit). |
+| `make hooks`       | Run all quality checks (ruff, mypy, bandit, vulture, xenon, import-linter, suppressions, pip-audit). |
 | `make smoke`       | Boot the real API and call `/health` and `/ready`.                      |
 | `make lint-imports` | Check the architecture contracts (import-linter).                      |
 | `make mutation`    | Mutation testing of the domain (slow); `make mutation-results` lists survivors. |
+| `make suppressions` | Fail when the suppressions differ from `suppressions-baseline.json`.   |
+| `make suppressions-update` | Lower the suppression baseline after removing suppressions.     |
 | `make check-code`  | Lint and check formatting with ruff.                                    |
 | `make format-code` | Fix lint issues and format the code with ruff.                          |
 
@@ -70,7 +72,7 @@ Loaded from the environment or the `.env` file by `app/common/settings.py`. New 
 
 ## Validation layers
 
-Tests written by an AI agent can pass and still prove little. Three deterministic layers catch what line coverage does not.
+Tests written by an AI agent can pass and still prove little, and an agent under pressure to make a check pass can weaken the check instead of fixing the code. These deterministic layers catch what line coverage does not and make weakening the pipeline visible.
 
 ### Boot smoke test (`make smoke`)
 
@@ -127,6 +129,37 @@ uv run mutmut show <name>   # diff of a surviving mutant: what changed and no te
 
 Score per module = killed ÷ total mutants. For each survivor, either add the missing assertion, or, if the mutant does not change behaviour (an equivalent mutant), leave it. Don't lower the scope to raise the score.
 
+### Suppression ratchet (`make suppressions`)
+
+`scripts/suppressions.py` counts, per file and per kind, every suppression in `app/`, `scripts/` and `tests/`:
+
+| Kind | Matches |
+| --- | --- |
+| `noqa` | `# noqa`, `# noqa: E501`, `# ruff: noqa` |
+| `type-ignore` | `# type: ignore`, `# type: ignore[code]` |
+| `nosec` | `# nosec` (bandit) |
+| `no-cover` | `# pragma: no cover`, `# pragma: no branch` |
+| `pylint-disable` / `mypy-directive` / `pyright-directive` | `# pylint: disable=...`, `# mypy: ...`, `# pyright: ...` |
+| `formatter-off` | `# fmt: off`, `# fmt: skip`, `# isort: skip_file`... |
+| `test-skip` / `test-xfail` | `pytest.mark.skip`/`skipif`/`xfail`, `pytest.skip()`/`importorskip()`/`xfail()`, `unittest.skip*`/`expectedFailure`, `self.skipTest()` |
+
+Comments are read with `tokenize` and tests with `ast`, so the same text inside a string does not count. The counts are compared with the committed `suppressions-baseline.json`:
+
+- **a count went up** (a new suppression, or one moved to another file): the check fails and lists the file, kind and lines. Remove the suppression and fix the cause. Raising the baseline (`uv run python scripts/suppressions.py update --allow-increase`) needs the owner's explicit approval, and the baseline change shows up in the PR diff;
+- **a count went down**: the check also fails until you run `make suppressions-update` and commit the lower baseline in the same PR, so the improvement is locked in and reviewed;
+- **counts match**: the check passes.
+
+It runs as a pre-commit hook, in `make hooks` and as the `suppressions` CI job. Configuration that disables checks globally (`pyproject.toml`, `.pre-commit-config.yaml`, the workflows) is not counted here: it is protected by `CODEOWNERS`, below.
+
+### Pipeline protection (`CODEOWNERS`)
+
+`.github/CODEOWNERS` assigns the files that define the pipeline and the agent rules (`pyproject.toml`, `.pre-commit-config.yaml`, `Makefile`, `scripts/`, `.github/` including the PR template, `suppressions-baseline.json`, `.claude/` including the agents, `CLAUDE.md`/`AGENTS.md`) to the repository owner.
+
+> [!IMPORTANT]
+> `CODEOWNERS` on its own protects nothing: it only requests a review. It becomes a gate only when the `main` branch ruleset requires code owner review, a GitHub setting outside the repository: **Settings → Rules → Rulesets → (ruleset targeting the default branch) → Require a pull request before merging → Require review from Code Owners** (with classic branch protection: **Settings → Branches → rule for `main` → Require a pull request before merging → Require review from Code Owners**).
+>
+> GitHub never counts the author's own approval. If agents open PRs with the code owner's own account (for example through the owner's `gh` token), the setting blocks those PRs unless the owner is in the ruleset bypass list, and a bypass also lets anything using that token skip it. For a real gate, let agents push and open PRs with a separate identity (a machine user or a GitHub App) and keep the owner as code owner.
+
 ## Quality Report
 
 Every pull request gets **one** comment (marker `<!-- quality-report -->`, updated in place on every push) with the verdict, a status table and a section per analysis: ✅ ok, ⚠️ warning, ❌ failed, ⏭️ not run (job cancelled/skipped, or nothing to do, e.g. no domain file changed for mutation testing). Long output goes inside collapsible `<details>`.
@@ -138,6 +171,7 @@ Every pull request gets **one** comment (marker `<!-- quality-report -->`, updat
 | Security | bandit + pip-audit | `security` | issues and vulnerable dependencies |
 | Dead code | vulture | `dead-code` | items found (⚠️, advisory: does not block) |
 | Complexity | xenon | `complexity` | blocks above the threshold |
+| Suppressions | `scripts/suppressions.py` | `suppressions` | total vs. baseline; new or removed suppressions by file, kind and line |
 | Tests and coverage | pytest + coverage | `tests` | passed/failed/total, coverage vs. minimum |
 | Architecture | import-linter | `lint-imports` | contracts kept/broken; broken contract and violating import |
 | Boot smoke | `scripts/smoke.sh` | `smoke` | booted?, `/health` and `/ready`, time to healthy; API logs only on failure |
@@ -147,7 +181,7 @@ Every pull request gets **one** comment (marker `<!-- quality-report -->`, updat
 
 Coverage is part of the report: the separate coverage comment no longer exists on PRs, and `python-coverage-comment-action` only updates the README badge on push to `main`.
 
-**Fragment contract.** A fragment is a JSON file `{"analysis": "<id>", "exit_code": 0, "output": "<tool output>", "advisory": false}`. The renderer parses `output` with one function per analysis, so the format of each section is tested in `tests/unit/scripts/test_quality_report.py`. `advisory` (`--advisory` in the wrapper) records the real exit code but makes the wrapper exit 0, for checks that only inform (vulture). Mutation testing also prints a `MUTATION_RESULT: {json}` line (see `scripts/mutation.py`).
+**Fragment contract.** A fragment is a JSON file `{"analysis": "<id>", "exit_code": 0, "output": "<tool output>", "advisory": false}`. The renderer parses `output` with one function per analysis, so the format of each section is tested in `tests/unit/scripts/test_quality_report.py`. `advisory` (`--advisory` in the wrapper) records the real exit code but makes the wrapper exit 0, for checks that only inform (vulture). Mutation testing also prints a `MUTATION_RESULT: {json}` line (see `scripts/mutation.py`) and the suppression ratchet a `SUPPRESSIONS_RESULT: {json}` line (see `scripts/suppressions.py`).
 
 **Adding an analysis.**
 
@@ -217,6 +251,9 @@ Create an empty `.local_dev` file at the root to work directly on your local bra
 | `.github/workflows/mutation.yml` | Mutation testing on PRs (changed files), weekly and on demand.      |
 | `scripts/mutation.py`        | Mutation target selection, summary and score gate.                      |
 | `scripts/quality_report.py`  | Runs analyses as CI fragments and renders the single Quality Report.    |
+| `scripts/suppressions.py`    | Suppression ratchet (`make suppressions`).                              |
+| `suppressions-baseline.json` | Committed suppression counts per file and kind.                         |
+| `.github/CODEOWNERS`         | Owner review for the pipeline and agent files (needs the ruleset setting). |
 | `.env.example`               | Environment variables template.                                         |
 | `.github/workflows/ci.yml`   | CI pipeline: one job per analysis plus the `quality-report` job.        |
 | `.github/dependabot.yaml`    | Dependency updates.                                                     |

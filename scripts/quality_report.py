@@ -15,6 +15,9 @@ MAX_DETAILS_CHARS = 6000
 MAX_SURVIVORS_LISTED = 50
 # Must match scripts/mutation.py, which prints this line followed by a JSON document
 MUTATION_RESULT_PREFIX = "MUTATION_RESULT: "
+# Must match scripts/suppressions.py, which prints this line followed by a JSON document
+SUPPRESSIONS_RESULT_PREFIX = "SUPPRESSIONS_RESULT: "
+MAX_SUPPRESSION_CHANGES_LISTED = 50
 UV_NOISE = re.compile(r"^warning: `VIRTUAL_ENV=.*$", re.MULTILINE)
 
 
@@ -30,6 +33,7 @@ class Analysis(StrEnum):
     IMPORT_LINTER = "import-linter"
     SMOKE = "smoke"
     MUTATION = "mutation"
+    SUPPRESSIONS = "suppressions"
 
 
 class Status(StrEnum):
@@ -101,6 +105,7 @@ SECTIONS = [
     Section("Security (bandit + pip-audit)", "security", (Analysis.BANDIT, Analysis.PIP_AUDIT)),
     Section("Dead code (vulture)", "dead-code", (Analysis.VULTURE,)),
     Section("Complexity (xenon)", "complexity", (Analysis.XENON,)),
+    Section("Suppressions (ratchet)", "suppressions", (Analysis.SUPPRESSIONS,)),
     Section("Tests and coverage (pytest)", "tests", (Analysis.PYTEST,)),
     Section("Architecture (import-linter)", "lint-imports", (Analysis.IMPORT_LINTER,)),
     Section("Boot smoke (/health and /ready)", "smoke", (Analysis.SMOKE,)),
@@ -365,6 +370,87 @@ def analyze_mutation(fragment: Fragment) -> Finding:
     return Finding(status, summary, details, "Survivors")
 
 
+@dataclass(frozen=True)
+class SuppressionChange:
+    path: str
+    kind: str
+    baseline: int
+    current: int
+    lines: list[int]
+
+    @property
+    def is_increase(self) -> bool:
+        return self.current > self.baseline
+
+
+@dataclass(frozen=True)
+class SuppressionOutcome:
+    total: int
+    totals: dict[str, int]
+    changes: list[SuppressionChange]
+
+    @property
+    def increases(self) -> list[SuppressionChange]:
+        return [change for change in self.changes if change.is_increase]
+
+    @classmethod
+    def parse(cls, output: str) -> SuppressionOutcome | None:
+        line = next(
+            (line for line in output.splitlines() if line.startswith(SUPPRESSIONS_RESULT_PREFIX)),
+            None,
+        )
+        if line is None:
+            return None
+        data = json.loads(line.removeprefix(SUPPRESSIONS_RESULT_PREFIX))
+        return cls(
+            total=int(data["total"]),
+            totals={str(kind): int(count) for kind, count in data["totals"].items()},
+            changes=[SuppressionChange(**item) for item in data["changes"]],
+        )
+
+
+def suppression_changes_table(changes: list[SuppressionChange]) -> str:
+    rows = [
+        "| File | Kind | Baseline → current | Lines |",
+        "| --- | --- | --- | --- |",
+        *(
+            f"| `{c.path}` | {c.kind} | {c.baseline} → {c.current} | "
+            f"{', '.join(map(str, c.lines)) or '-'} |"
+            for c in changes[:MAX_SUPPRESSION_CHANGES_LISTED]
+        ),
+    ]
+    hidden = len(changes) - MAX_SUPPRESSION_CHANGES_LISTED
+    if hidden > 0:
+        rows.append(f"\n... and {hidden} more. Run `make suppressions` for the full list.")
+    return "\n".join(rows)
+
+
+def analyze_suppressions(fragment: Fragment) -> Finding:
+    output = clean(fragment.output)
+    outcome = SuppressionOutcome.parse(output)
+    if outcome is None:
+        return Finding(
+            Status.FAILED, "suppression check failed before producing a result", tail(output)
+        )
+    if outcome.increases:
+        added = sum(c.current - c.baseline for c in outcome.increases)
+        summary = f"{plural(added, 'new suppression', 'new suppressions')} above the baseline"
+        details = suppression_changes_table(outcome.increases)
+        return Finding(Status.FAILED, summary, details, "New suppressions")
+    if outcome.changes:
+        removed = sum(c.baseline - c.current for c in outcome.changes)
+        summary = (
+            f"{plural(removed, 'suppression', 'suppressions')} removed but still counted in the "
+            "baseline: run `make suppressions-update`"
+        )
+        return Finding(
+            Status.FAILED, summary, suppression_changes_table(outcome.changes), "Stale baseline"
+        )
+    listing = "\n".join(f"{kind}: {count}" for kind, count in outcome.totals.items())
+    summary = f"{plural(outcome.total, 'suppression', 'suppressions')}, matching the baseline"
+    return Finding(Status.OK, summary, listing, "By kind")
+
+
 ANALYZERS: dict[Analysis, Callable[[Fragment], Finding]] = {
     Analysis.RUFF_CHECK: analyze_ruff_check,
     Analysis.RUFF_FORMAT: analyze_ruff_format,
@@ -377,6 +463,7 @@ ANALYZERS: dict[Analysis, Callable[[Fragment], Finding]] = {
     Analysis.IMPORT_LINTER: analyze_import_linter,
     Analysis.SMOKE: analyze_smoke,
     Analysis.MUTATION: analyze_mutation,
+    Analysis.SUPPRESSIONS: analyze_suppressions,
 }
 
 

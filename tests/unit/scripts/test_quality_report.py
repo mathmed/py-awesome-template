@@ -1,9 +1,10 @@
 import json
+from collections import Counter
 from pathlib import Path
 
 import pytest
 
-from scripts import quality_report
+from scripts import quality_report, suppressions
 from scripts.quality_report import (
     Analysis,
     Fragment,
@@ -13,6 +14,7 @@ from scripts.quality_report import (
     analyze_mutation,
     analyze_pytest,
     analyze_smoke,
+    analyze_suppressions,
     analyze_vulture,
     analyze_xenon,
     render,
@@ -83,6 +85,19 @@ def mutation_output(score: float, survivors: list[dict[str, str]], skipped: bool
     return "noise\n" + quality_report.MUTATION_RESULT_PREFIX + json.dumps(payload) + "\n"
 
 
+def suppressions_output(
+    occurrences: tuple[suppressions.Occurrence, ...],
+    baseline: Counter[tuple[str, suppressions.Kind]],
+) -> str:
+    return "Suppressions: ...\n" + suppressions.Comparison(occurrences, baseline).to_result_line()
+
+
+NOSEC_IN_HANDLER = suppressions.Occurrence("app/h.py", 7, suppressions.Kind.NOSEC)
+SUPPRESSIONS_OK = suppressions_output(
+    (NOSEC_IN_HANDLER,), Counter({("app/h.py", suppressions.Kind.NOSEC): 1})
+)
+
+
 def fragment(analysis: Analysis, output: str = "", exit_code: int = 0) -> Fragment:
     return Fragment(analysis, exit_code, output)
 
@@ -93,6 +108,7 @@ def all_ok_fragments() -> dict[Analysis, Fragment]:
         Analysis.IMPORT_LINTER: IMPORT_LINTER_OK,
         Analysis.SMOKE: SMOKE_OK,
         Analysis.MUTATION: mutation_output(100.0, []),
+        Analysis.SUPPRESSIONS: SUPPRESSIONS_OK,
     }
     return {analysis: fragment(analysis, outputs.get(analysis, "")) for analysis in Analysis}
 
@@ -194,6 +210,59 @@ class TestMutation:
 
         assert finding.status == Status.FAILED
         assert "CalledProcessError" in finding.details
+
+
+class TestSuppressions:
+    def test_should_share_the_result_prefix_with_the_producer(self) -> None:
+        assert quality_report.SUPPRESSIONS_RESULT_PREFIX == suppressions.RESULT_PREFIX
+
+    def test_should_report_totals_when_matching_the_baseline(self) -> None:
+        finding = analyze_suppressions(fragment(Analysis.SUPPRESSIONS, SUPPRESSIONS_OK))
+
+        assert finding.status == Status.OK
+        assert finding.summary == "1 suppression, matching the baseline"
+        assert finding.details == "nosec: 1"
+
+    def test_should_list_new_suppressions_with_file_and_lines(self) -> None:
+        second = suppressions.Occurrence("app/h.py", 9, suppressions.Kind.NOSEC)
+        output = suppressions_output(
+            (NOSEC_IN_HANDLER, second), Counter({("app/h.py", suppressions.Kind.NOSEC): 1})
+        )
+
+        finding = analyze_suppressions(fragment(Analysis.SUPPRESSIONS, output, 1))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == "1 new suppression above the baseline"
+        assert "| `app/h.py` | nosec | 1 → 2 | 7, 9 |" in finding.details
+
+    def test_should_ask_to_update_a_stale_baseline(self) -> None:
+        output = suppressions_output((), Counter({("app/h.py", suppressions.Kind.NOQA): 2}))
+
+        finding = analyze_suppressions(fragment(Analysis.SUPPRESSIONS, output, 1))
+
+        assert finding.status == Status.FAILED
+        assert "2 suppressions removed" in finding.summary
+        assert "make suppressions-update" in finding.summary
+        assert "| `app/h.py` | noqa | 2 → 0 | - |" in finding.details
+
+    def test_should_truncate_a_long_list_of_changes(self) -> None:
+        occurrences = tuple(
+            suppressions.Occurrence(f"app/m{index:02}.py", 1, suppressions.Kind.NOQA)
+            for index in range(quality_report.MAX_SUPPRESSION_CHANGES_LISTED + 2)
+        )
+        output = suppressions_output(occurrences, Counter())
+
+        finding = analyze_suppressions(fragment(Analysis.SUPPRESSIONS, output, 1))
+
+        assert "52 new suppressions" in finding.summary
+        assert "... and 2 more" in finding.details
+        assert "app/m51.py" not in finding.details
+
+    def test_should_fail_when_the_check_crashes(self) -> None:
+        finding = analyze_suppressions(fragment(Analysis.SUPPRESSIONS, "SyntaxError: boom", 1))
+
+        assert finding.status == Status.FAILED
+        assert "SyntaxError: boom" in finding.details
 
 
 class TestAdvisoryTools:

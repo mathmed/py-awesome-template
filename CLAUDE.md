@@ -15,11 +15,13 @@ make setup        # install uv, dependencies and git hooks
 make run          # run the API locally with hot reload
 make test         # all tests with coverage (fails under 80%)
 make test-unit    # only the fast unit tests
-make hooks        # all quality checks: ruff, mypy, bandit, vulture, xenon, import-linter, pip-audit
+make hooks        # all quality checks: ruff, mypy, bandit, vulture, xenon, import-linter, suppressions, pip-audit
 make smoke        # boots the real API and calls /health and /ready
 make lint-imports # architecture contracts (import-linter)
 make mutation     # mutation testing of the whole domain (slow; weekly in CI)
 make mutation-changed # mutation testing of only the domain files changed vs BASE (default origin/main); runs on every PR
+make suppressions # suppression ratchet: fails when noqa/type: ignore/nosec/skip... differ from the baseline
+make suppressions-update # lower suppressions-baseline.json after removing suppressions (never raises it)
 make format-code  # fix lint issues and format with ruff
 ```
 
@@ -70,6 +72,14 @@ tests/integration/ HTTP tests with TestClient
 - `make smoke` boots the API for real and calls `/health` (liveness, touches no dependency) and `/ready`
   (readiness, touches the real dependencies). A new infra dependency needs a `ReadinessCheckContract`
   implementation registered in `check_readiness_factory`.
+- `make suppressions` compares every `# noqa`, `# type: ignore`, `# nosec`, `# pragma: no cover`, tool
+  directive (`# pylint:`, `# mypy:`, `# pyright:`, `# fmt: off`) and skipped/xfail test in `app/`, `scripts/`
+  and `tests/` with `suppressions-baseline.json`. Fix the cause instead of suppressing it. Never raise the
+  baseline (`update --allow-increase`) without the user's explicit approval. When you remove suppressions,
+  run `make suppressions-update` and commit the lower baseline in the same PR.
+- Pipeline and agent files (`pyproject.toml`, `.pre-commit-config.yaml`, `Makefile`, `scripts/`, `.github/`,
+  `.claude/`, `CLAUDE.md`, `suppressions-baseline.json`) are in `.github/CODEOWNERS`. Do not change them
+  unless the task asks for it, and call the change out in the PR.
 - Mutation testing runs on every PR (`Mutation testing` workflow, only the domain files changed in the diff)
   and weekly on the whole domain. The job fails when the score of the mutated scope is below
   `MUTATION_MIN_SCORE` (repository variable, default 90). Surviving mutants are listed in the run summary
