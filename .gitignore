@@ -166,6 +166,8 @@ cython_debug/
 .claude/settings.local.json
 .local_dev
 mutants/
+# Handoff notes from the coder agent to the pr-writer agent (see CLAUDE.md)
+.handoff/
 
 # Schemathesis local cache (crash replay)
 .schemathesis/
