@@ -128,9 +128,10 @@ Body: the template sections in order, with the guidance comments removed. Before
 
 ### 10. Open the PR and label it
 
-1. Make sure the four labels exist (`gh label list --search "risk:" --json name -q '.[].name'`); create the
-   missing ones with `make risk-labels`, or with `gh label create "risk:<level>" --color <hex> --force`
-   (low `0E8A16`, medium `FBCA04`, high `D93F0B`, critical `B60205`).
+1. Make sure the four labels exist with `make risk-labels`. It is idempotent (`gh label create --force`), so
+   run it instead of searching the label list, whose search results can lag behind. Without that target,
+   run `gh label create "risk:<level>" --color <hex> --force` for each level (low `0E8A16`, medium
+   `FBCA04`, high `D93F0B`, critical `B60205`).
 2. Write the body to a temporary file (`mktemp`) and open the PR:
    `gh pr create --base <base> --head <branch> --title "<title>" --body-file <file> --label "risk:<level>"`.
    If a PR was already open, update it instead: `gh pr edit <number> --title ... --body-file <file>
