@@ -17,7 +17,7 @@ A production-ready starting point for Python 3.14 APIs with FastAPI: a layered f
 - **CI**: every pull request runs all checks and posts a single **Quality Report** comment with the result of every analysis (see [Quality Report](#quality-report)).
 - **Dependabot**: weekly grouped updates for Python dependencies and GitHub Actions.
 - **Production basics**: typed settings ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)), JSON logs in production, configurable CORS, domain errors mapped to HTTP status codes and `/health` (liveness) and `/ready` (readiness) routes.
-- **Deterministic validation for AI-generated code**: a boot smoke test, API contract tests (Schemathesis), breaking-change detection on the OpenAPI schema (oasdiff), architecture contracts, mutation testing and a suppression ratchet, with the pipeline files protected by `CODEOWNERS` (see [Validation layers](#validation-layers)).
+- **Deterministic validation for AI-generated code**: a boot smoke test, API contract tests (Schemathesis), breaking-change detection on the OpenAPI schema (oasdiff), architecture contracts, mutation testing, a suppression ratchet and a risk floor that keeps changes to the pipeline itself at high risk (see [Validation layers](#validation-layers)).
 - **Docker**: a `dev` stage with hot reload and a slim, non-root `production` stage with healthcheck.
 - **AI-ready**: `CLAUDE.md`/`AGENTS.md` with the project rules, Claude Code agents (`coder`, `pr-writer`, `reviewer`), a PR template built for fast review, permissions and a hook that formats every file the agent edits.
 
@@ -173,16 +173,7 @@ Comments are read with `tokenize` and tests with `ast`, so the same text inside 
 - **a count went down**: the check also fails until you run `make suppressions-update` and commit the lower baseline in the same PR, so the improvement is locked in and reviewed;
 - **counts match**: the check passes.
 
-It runs as a pre-commit hook, in `make hooks` and as the `suppressions` CI job. Configuration that disables checks globally (`pyproject.toml`, `.pre-commit-config.yaml`, the workflows) is not counted here: it is protected by `CODEOWNERS`, below.
-
-### Pipeline protection (`CODEOWNERS`)
-
-`.github/CODEOWNERS` assigns the files that define the pipeline and the agent rules (`pyproject.toml`, `.pre-commit-config.yaml`, `Makefile`, `scripts/`, `.github/` including the PR template, `suppressions-baseline.json`, `.claude/` including the agents, `CLAUDE.md`/`AGENTS.md`) to the repository owner.
-
-> [!IMPORTANT]
-> `CODEOWNERS` on its own protects nothing: it only requests a review. It becomes a gate only when the `main` branch ruleset requires code owner review, a GitHub setting outside the repository: **Settings → Rules → Rulesets → (ruleset targeting the default branch) → Require a pull request before merging → Require review from Code Owners** (with classic branch protection: **Settings → Branches → rule for `main` → Require a pull request before merging → Require review from Code Owners**).
->
-> GitHub never counts the author's own approval. If agents open PRs with the code owner's own account (for example through the owner's `gh` token), the setting blocks those PRs unless the owner is in the ruleset bypass list, and a bypass also lets anything using that token skip it. For a real gate, let agents push and open PRs with a separate identity (a machine user or a GitHub App) and keep the owner as code owner.
+It runs as a pre-commit hook, in `make hooks` and as the `suppressions` CI job. Configuration that disables checks globally (`pyproject.toml`, `.pre-commit-config.yaml`, the workflows) is not counted here: changing any of those files puts the PR at the `high` risk floor (see [Risk floors and the risk label](#risk-floors-and-the-risk-label)), and the `pr-writer` agent always lists pipeline changes under **Look here**.
 
 ### Risk floors and the risk label
 
@@ -195,6 +186,8 @@ Every PR carries exactly one `risk:low`, `risk:medium`, `risk:high` or `risk:cri
 | auth | `**/*auth*`, `**/*permission*` (files and directories) |
 
 `make risk-floor` prints the floor of the current branch and the files behind it; the `pr-writer` agent runs the same command, so the agent and CI agree. The **Risk label** workflow (`.github/workflows/risk-label.yml`) runs `scripts/risk.py check` on every push and every label change and fails when the PR has no risk label, more than one, an unknown one, or one below the floor. It is a separate workflow so that changing a label does not re-run the whole CI, and for that reason it is not part of the Quality Report. The second floor rule (any deploy step other than "None" is at least `medium`) depends on the PR description, so only the agent applies it.
+
+The floor is what keeps a change to the pipeline from passing as a minor one: such a PR is always labeled at least `high` and its pipeline changes are listed under **Look here**. It does not require a specific reviewer's approval; merging stays with the owner.
 
 Create the labels once with `make risk-labels` (idempotent: `gh label create --force`). Dependabot PRs get `risk:high` through `labels` in `.github/dependabot.yaml`, since they touch `pyproject.toml` or the workflows. To add a category, append an entry with `category`, `level` and `paths` to the YAML file; the check picks it up on the next run.
 
@@ -314,7 +307,6 @@ People opening PRs by hand get the same template from GitHub.
 | `scripts/quality_report.py`  | Runs analyses as CI fragments and renders the single Quality Report.    |
 | `scripts/suppressions.py`    | Suppression ratchet (`make suppressions`).                              |
 | `suppressions-baseline.json` | Committed suppression counts per file and kind.                         |
-| `.github/CODEOWNERS`         | Owner review for the pipeline and agent files (needs the ruleset setting). |
 | `.github/risk-floors.yaml`   | Minimum risk level per file category, read by `scripts/risk.py` and the `pr-writer` agent. |
 | `scripts/risk.py`            | Risk floor of a diff and the risk label check (`make risk-floor`).      |
 | `.github/workflows/risk-label.yml` | Fails PRs without a single risk label at or above the floor.      |

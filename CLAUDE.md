@@ -83,8 +83,9 @@ tests/integration/ HTTP tests with TestClient
   baseline (`update --allow-increase`) without the user's explicit approval. When you remove suppressions,
   run `make suppressions-update` and commit the lower baseline in the same PR.
 - Pipeline and agent files (`pyproject.toml`, `.pre-commit-config.yaml`, `Makefile`, `scripts/`, `.github/`,
-  `.claude/`, `CLAUDE.md`, `suppressions-baseline.json`) are in `.github/CODEOWNERS`. Do not change them
-  unless the task asks for it, and call the change out in the PR.
+  `.claude/`, `CLAUDE.md`, `suppressions-baseline.json`) put the PR at the `high` risk floor
+  (`.github/risk-floors.yaml`). Do not change them unless the task asks for it, and call the change out in
+  the PR.
 - `make contract` boots the API like `make smoke` and runs a bounded Schemathesis pass (fixed seed) against
   `/openapi.json`: responses must match the documented status codes and schemas, invalid input must be
   rejected and nothing may return a 5xx. Fix the route or document the response (`responses=` in the
