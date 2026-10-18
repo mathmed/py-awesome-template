@@ -15,11 +15,17 @@ make setup        # install uv, dependencies and git hooks
 make run          # run the API locally with hot reload
 make test         # all tests with coverage (fails under 80%)
 make test-unit    # only the fast unit tests
-make hooks        # all quality checks: ruff, mypy, bandit, vulture, xenon, import-linter, pip-audit
+make hooks        # all quality checks: ruff, mypy, bandit, vulture, xenon, import-linter, suppressions, pip-audit
 make smoke        # boots the real API and calls /health and /ready
+make contract     # boots the real API and runs Schemathesis against its OpenAPI schema
+make openapi-diff # fails on breaking OpenAPI changes vs BASE (default origin/main); needs oasdiff
+make risk-floor   # minimum risk level of the branch vs BASE, from .github/risk-floors.yaml
+make risk-labels  # create/update the risk:<level> labels on GitHub
 make lint-imports # architecture contracts (import-linter)
 make mutation     # mutation testing of the whole domain (slow; weekly in CI)
 make mutation-changed # mutation testing of only the domain files changed vs BASE (default origin/main); runs on every PR
+make suppressions # suppression ratchet: fails when noqa/type: ignore/nosec/skip... differ from the baseline
+make suppressions-update # lower suppressions-baseline.json after removing suppressions (never raises it)
 make format-code  # fix lint issues and format with ruff
 ```
 
@@ -58,7 +64,8 @@ tests/integration/ HTTP tests with TestClient
 
 1. The app imports: `uv run python -c "import app.main.main"`.
 2. New environment variables have a default or an entry in `.env.example`.
-3. `make hooks`, `make test`, `make lint-imports` and `make smoke` pass. A PR with failing checks is not a PR.
+3. `make hooks`, `make test`, `make lint-imports`, `make smoke` and `make contract` pass, and so does
+   `make openapi-diff` when `oasdiff` is installed (CI always runs it). A PR with failing checks is not a PR.
 4. Existing routes are not removed or renamed unless the task asks for it.
 5. The README is updated if the change affects setup, commands, routes, env vars or architecture.
 
@@ -70,6 +77,23 @@ tests/integration/ HTTP tests with TestClient
 - `make smoke` boots the API for real and calls `/health` (liveness, touches no dependency) and `/ready`
   (readiness, touches the real dependencies). A new infra dependency needs a `ReadinessCheckContract`
   implementation registered in `check_readiness_factory`.
+- `make suppressions` compares every `# noqa`, `# type: ignore`, `# nosec`, `# pragma: no cover`, tool
+  directive (`# pylint:`, `# mypy:`, `# pyright:`, `# fmt: off`) and skipped/xfail test in `app/`, `scripts/`
+  and `tests/` with `suppressions-baseline.json`. Fix the cause instead of suppressing it. Never raise the
+  baseline (`update --allow-increase`) without the user's explicit approval. When you remove suppressions,
+  run `make suppressions-update` and commit the lower baseline in the same PR.
+- Pipeline and agent files (`pyproject.toml`, `.pre-commit-config.yaml`, `Makefile`, `scripts/`, `.github/`,
+  `.claude/`, `CLAUDE.md`, `suppressions-baseline.json`) put the PR at the `high` risk floor
+  (`.github/risk-floors.yaml`). Do not change them unless the task asks for it, and call the change out in
+  the PR.
+- `make contract` boots the API like `make smoke` and runs a bounded Schemathesis pass (fixed seed) against
+  `/openapi.json`: responses must match the documented status codes and schemas, invalid input must be
+  rejected and nothing may return a 5xx. Fix the route or document the response (`responses=` in the
+  route), never exclude the check or the operation.
+- `make openapi-diff` exports the OpenAPI schema of HEAD and of the merge base with the base branch and runs
+  `oasdiff changelog --fail-on ERR`: removing or renaming a route, a response field or making a parameter
+  required fails the PR. Public contracts only grow additively; a deliberate breaking change needs the
+  user's explicit approval and is called out in the PR.
 - Mutation testing runs on every PR (`Mutation testing` workflow, only the domain files changed in the diff)
   and weekly on the whole domain. The job fails when the score of the mutated scope is below
   `MUTATION_MIN_SCORE` (repository variable, default 90). Surviving mutants are listed in the run summary
@@ -78,12 +102,38 @@ tests/integration/ HTTP tests with TestClient
 
 ## Workflow
 
-- Code changes are delegated to the `coder` agent (`.claude/agents/coder.md`), which creates a branch,
-  implements, commits and opens a PR. Never commit directly to `main`.
+1. **Implement**: code changes are delegated to the `coder` agent (`.claude/agents/coder.md`), which creates
+   a branch, implements, commits (one commit per logical step), pushes and writes the handoff notes. It does
+   not open the PR and does not assess the risk. Never commit directly to `main`.
+2. **Describe and open**: then delegate to the `pr-writer` agent (`.claude/agents/pr-writer.md`) with the
+   original task verbatim, the branch, the base branch and the path of the handoff notes. It reads the diff
+   cold, commit by commit, fills `.github/pull_request_template.md`, assigns the risk level (never below
+   `make risk-floor`, at least medium when there are deploy steps), opens the PR with the `risk:<level>`
+   label and stops. It never writes code. Behavior items are plain language with no file, function, test
+   or code references; the evidence pointers for them go only in **Look here**, and a behavior without
+   evidence is listed under **Not verified**.
+3. **Fallback**: if `pr-writer` fails or cannot run, delegate back to `coder` saying so: it opens the PR
+   itself with a minimal body (summary plus the template headings, risk "unassessed", no risk label), so a
+   failure never blocks delivery. The Risk label check stays red until a person sets the label.
+4. **Merge**: nobody but the owner merges. Agents never merge, approve or enable auto-merge.
+
 - **Exception**: if a `.local_dev` file exists at the repository root, the developer is working locally —
-  edit files directly, without delegating to `coder` and without creating commits or PRs.
+  edit files directly, without delegating to `coder` or `pr-writer` and without creating commits or PRs.
 - Use the `reviewer` agent (`.claude/agents/reviewer.md`) to review a branch against these rules before
   merging.
+
+### Handoff notes
+
+The `coder` writes them to `.handoff/<branch>.md` (every `/` of the branch name replaced with `-`; the
+directory is gitignored) after pushing. `pr-writer` checks them against the diff and reports a **Mismatch**
+when they disagree. Sections, in this order:
+
+- `## Task`: the original task, verbatim.
+- `## Done`: what changed and why, one line per item.
+- `## Decisions`: choices made, alternatives rejected, conservative options taken on non-blocking doubts.
+- `## Deploy notes`: new env vars or secrets, migrations and their order, flags, external configuration; or
+  "None".
+- `## Not verified`: everything the author did not or could not check, and why; or "nothing".
 
 ## Personal preferences
 

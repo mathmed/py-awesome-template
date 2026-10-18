@@ -1,0 +1,36 @@
+# Minimum risk level of a pull request, by the files it touches (added, changed, deleted or renamed).
+# Read by the pr-writer agent (.claude/agents/pr-writer.md) and by scripts/risk.py, which the "Risk label"
+# workflow runs to check that the PR's risk:<level> label is not below the floor.
+#
+# Patterns are repository-relative and matched with pathlib's full_match: `*` matches inside one path
+# segment, `**` any number of segments. Levels: low, medium, high, critical.
+# The other floor (any deploy step other than "None" is at least medium) depends on the PR description,
+# so only the pr-writer agent applies it.
+floors:
+  - category: pipeline config
+    level: high
+    paths:
+      - pyproject.toml
+      - .pre-commit-config.yaml
+      - Makefile
+      - suppressions-baseline.json
+      - scripts/**
+      - .github/**
+      - .claude/**
+      - CLAUDE.md
+      - AGENTS.md
+
+  - category: migrations
+    level: high
+    paths:
+      - "**/migrations/**"
+      - "**/alembic/**"
+      - alembic.ini
+
+  - category: auth
+    level: high
+    paths:
+      - "**/*auth*"
+      - "**/*auth*/**"
+      - "**/*permission*"
+      - "**/*permission*/**"

@@ -1,9 +1,10 @@
 import json
+from collections import Counter
 from pathlib import Path
 
 import pytest
 
-from scripts import quality_report
+from scripts import quality_report, suppressions
 from scripts.quality_report import (
     Analysis,
     Fragment,
@@ -11,8 +12,11 @@ from scripts.quality_report import (
     analyze_bandit,
     analyze_import_linter,
     analyze_mutation,
+    analyze_oasdiff,
     analyze_pytest,
+    analyze_schemathesis,
     analyze_smoke,
+    analyze_suppressions,
     analyze_vulture,
     analyze_xenon,
     render,
@@ -70,6 +74,75 @@ SMOKE_FAILED = """>> starting the API on http://127.0.0.1:18000 (ENV=production)
 Traceback: boom
 """
 
+SCHEMATHESIS_OK = """>> API healthy after 0.545s
+>> running schemathesis against http://127.0.0.1:18000/openapi.json (seed 1, max 50 examples)
+     Operations:       3 selected / 3 total
+=================================== SUMMARY ====================================
+Test cases:
+  54 generated, 54 passed
+
+Seed: 1
+
+=========================== No issues found in 0.46s ===========================
+>> contract OK
+"""
+SCHEMATHESIS_FAILED = """     Operations:       3 selected / 3 total
+=================================== FAILURES ===================================
+_________________________________ GET /example _________________________________
+1. Test Case ID: cidoQT
+
+- Server error
+
+    curl -X GET 'http://127.0.0.1:18000/example?field1=example'
+
+=================================== SUMMARY ====================================
+
+Test Phases:
+  ❌ Coverage
+
+Failures:
+  ❌ Server error: 1
+  ❌ Undocumented HTTP status code: 1
+
+Test cases:
+  29 generated, 1 found 2 unique failures
+
+Seed: 1
+
+============================= 2 failures in 0.25s ==============================
+>> contract: schemathesis failed: contract violations or invalid options, see its output above
+>> contract FAILED. API logs:
+RuntimeError: boom
+"""
+SCHEMATHESIS_NOT_STARTED = """>> starting the API on http://127.0.0.1:18000 (ENV=production)
+>> contract: the API process exited before becoming healthy
+>> contract FAILED. API logs:
+ValidationError: env
+"""
+
+OASDIFF_NO_CHANGES = """Comparing the OpenAPI schema of HEAD with origin/main (merge base 6a0421faff05)
+No changes detected
+"""
+OASDIFF_BREAKING = """Comparing the OpenAPI schema of HEAD with origin/main (merge base 6a0421faff05)
+3 changes: 1 error, 1 warning, 1 info
+error\t[request-parameter-became-required] at head.openapi.json
+\tin API GET /example
+\t\tthe `query` request parameter `field1` became required
+
+warning\t[response-property-became-optional] at head.openapi.json
+\tin API GET /ready
+\t\tthe response property `status` became optional
+
+info\t[endpoint-added] at head.openapi.json
+\tin API GET /items
+\t\tendpoint added
+"""
+OASDIFF_INFO_ONLY = """1 change: 0 error, 0 warning, 1 info
+info\t[endpoint-added] at head.openapi.json
+\tin API GET /items
+\t\tendpoint added
+"""
+
 
 def mutation_output(score: float, survivors: list[dict[str, str]], skipped: bool = False) -> str:
     payload = {
@@ -83,6 +156,19 @@ def mutation_output(score: float, survivors: list[dict[str, str]], skipped: bool
     return "noise\n" + quality_report.MUTATION_RESULT_PREFIX + json.dumps(payload) + "\n"
 
 
+def suppressions_output(
+    occurrences: tuple[suppressions.Occurrence, ...],
+    baseline: Counter[tuple[str, suppressions.Kind]],
+) -> str:
+    return "Suppressions: ...\n" + suppressions.Comparison(occurrences, baseline).to_result_line()
+
+
+NOSEC_IN_HANDLER = suppressions.Occurrence("app/h.py", 7, suppressions.Kind.NOSEC)
+SUPPRESSIONS_OK = suppressions_output(
+    (NOSEC_IN_HANDLER,), Counter({("app/h.py", suppressions.Kind.NOSEC): 1})
+)
+
+
 def fragment(analysis: Analysis, output: str = "", exit_code: int = 0) -> Fragment:
     return Fragment(analysis, exit_code, output)
 
@@ -93,6 +179,9 @@ def all_ok_fragments() -> dict[Analysis, Fragment]:
         Analysis.IMPORT_LINTER: IMPORT_LINTER_OK,
         Analysis.SMOKE: SMOKE_OK,
         Analysis.MUTATION: mutation_output(100.0, []),
+        Analysis.SUPPRESSIONS: SUPPRESSIONS_OK,
+        Analysis.SCHEMATHESIS: SCHEMATHESIS_OK,
+        Analysis.OASDIFF: OASDIFF_NO_CHANGES,
     }
     return {analysis: fragment(analysis, outputs.get(analysis, "")) for analysis in Analysis}
 
@@ -160,6 +249,97 @@ class TestSmoke:
         assert finding.details == "Traceback: boom"
 
 
+class TestSchemathesis:
+    def test_should_report_cases_operations_and_seed(self) -> None:
+        finding = analyze_schemathesis(fragment(Analysis.SCHEMATHESIS, SCHEMATHESIS_OK))
+
+        assert finding.status == Status.OK
+        assert finding.summary == (
+            "No contract violations · 54 test cases on 3 operations · seed 1"
+        )
+        assert finding.details == ""
+
+    def test_should_list_failed_checks_with_the_failures_and_api_logs(self) -> None:
+        finding = analyze_schemathesis(fragment(Analysis.SCHEMATHESIS, SCHEMATHESIS_FAILED, 1))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == (
+            "2 failures: Server error (1); Undocumented HTTP status code (1)"
+            " · 29 test cases on 3 operations · seed 1"
+        )
+        assert finding.details.startswith("_" * 33 + " GET /example")
+        assert "curl -X GET" in finding.details
+        assert "SUMMARY" not in finding.details
+        assert finding.details.endswith("--- API logs ---\nRuntimeError: boom")
+
+    def test_should_report_why_the_contract_test_did_not_run(self) -> None:
+        finding = analyze_schemathesis(fragment(Analysis.SCHEMATHESIS, SCHEMATHESIS_NOT_STARTED, 1))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == (
+            "Contract test did not run: the API process exited before becoming healthy"
+        )
+        assert finding.details == "ValidationError: env"
+
+    def test_should_fail_with_the_raw_output_when_nothing_is_recognized(self) -> None:
+        finding = analyze_schemathesis(fragment(Analysis.SCHEMATHESIS, "uv: not found", 127))
+
+        assert finding.summary == "Contract test did not run"
+        assert finding.details == "uv: not found"
+
+
+class TestOasdiff:
+    def test_should_report_no_api_changes(self) -> None:
+        finding = analyze_oasdiff(fragment(Analysis.OASDIFF, OASDIFF_NO_CHANGES))
+
+        assert finding.status == Status.OK
+        assert finding.summary == "No API changes"
+
+    def test_should_list_additive_changes_as_ok(self) -> None:
+        finding = analyze_oasdiff(fragment(Analysis.OASDIFF, OASDIFF_INFO_ONLY))
+
+        assert finding.status == Status.OK
+        assert finding.summary == "1 API change, none breaking"
+        assert finding.details == "info    API GET /items: endpoint added [endpoint-added]"
+
+    def test_should_fail_on_breaking_changes_and_list_every_change(self) -> None:
+        finding = analyze_oasdiff(fragment(Analysis.OASDIFF, OASDIFF_BREAKING, 1))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == "1 breaking change out of 3"
+        assert finding.details.splitlines() == [
+            "error   API GET /example: the `query` request parameter `field1` became required"
+            " [request-parameter-became-required]",
+            "warning API GET /ready: the response property `status` became optional"
+            " [response-property-became-optional]",
+            "info    API GET /items: endpoint added [endpoint-added]",
+        ]
+
+    def test_should_warn_on_possible_breaking_changes(self) -> None:
+        output = OASDIFF_BREAKING.replace("3 changes: 1 error", "3 changes: 0 error")
+
+        finding = analyze_oasdiff(fragment(Analysis.OASDIFF, output))
+
+        assert finding.status == Status.WARNING
+        assert finding.summary == "1 possible breaking change (warning) out of 3"
+
+    @pytest.mark.parametrize(
+        ("output", "exit_code"),
+        [
+            ("oasdiff not found (oasdiff): install it, see the README", 127),
+            ("`git merge-base origin/x HEAD` failed", 1),
+            ("1 change: 0 error, 0 warning, 1 info\npanic: boom", 2),
+            ("something unexpected", 0),
+        ],
+    )
+    def test_should_fail_when_the_diff_did_not_complete(self, output: str, exit_code: int) -> None:
+        finding = analyze_oasdiff(fragment(Analysis.OASDIFF, output, exit_code))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == "OpenAPI diff failed before comparing"
+        assert output in finding.details
+
+
 class TestMutation:
     def test_should_list_survivors_with_file_and_function(self) -> None:
         survivor = {
@@ -194,6 +374,59 @@ class TestMutation:
 
         assert finding.status == Status.FAILED
         assert "CalledProcessError" in finding.details
+
+
+class TestSuppressions:
+    def test_should_share_the_result_prefix_with_the_producer(self) -> None:
+        assert quality_report.SUPPRESSIONS_RESULT_PREFIX == suppressions.RESULT_PREFIX
+
+    def test_should_report_totals_when_matching_the_baseline(self) -> None:
+        finding = analyze_suppressions(fragment(Analysis.SUPPRESSIONS, SUPPRESSIONS_OK))
+
+        assert finding.status == Status.OK
+        assert finding.summary == "1 suppression, matching the baseline"
+        assert finding.details == "nosec: 1"
+
+    def test_should_list_new_suppressions_with_file_and_lines(self) -> None:
+        second = suppressions.Occurrence("app/h.py", 9, suppressions.Kind.NOSEC)
+        output = suppressions_output(
+            (NOSEC_IN_HANDLER, second), Counter({("app/h.py", suppressions.Kind.NOSEC): 1})
+        )
+
+        finding = analyze_suppressions(fragment(Analysis.SUPPRESSIONS, output, 1))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == "1 new suppression above the baseline"
+        assert "| `app/h.py` | nosec | 1 → 2 | 7, 9 |" in finding.details
+
+    def test_should_ask_to_update_a_stale_baseline(self) -> None:
+        output = suppressions_output((), Counter({("app/h.py", suppressions.Kind.NOQA): 2}))
+
+        finding = analyze_suppressions(fragment(Analysis.SUPPRESSIONS, output, 1))
+
+        assert finding.status == Status.FAILED
+        assert "2 suppressions removed" in finding.summary
+        assert "make suppressions-update" in finding.summary
+        assert "| `app/h.py` | noqa | 2 → 0 | - |" in finding.details
+
+    def test_should_truncate_a_long_list_of_changes(self) -> None:
+        occurrences = tuple(
+            suppressions.Occurrence(f"app/m{index:02}.py", 1, suppressions.Kind.NOQA)
+            for index in range(quality_report.MAX_SUPPRESSION_CHANGES_LISTED + 2)
+        )
+        output = suppressions_output(occurrences, Counter())
+
+        finding = analyze_suppressions(fragment(Analysis.SUPPRESSIONS, output, 1))
+
+        assert "52 new suppressions" in finding.summary
+        assert "... and 2 more" in finding.details
+        assert "app/m51.py" not in finding.details
+
+    def test_should_fail_when_the_check_crashes(self) -> None:
+        finding = analyze_suppressions(fragment(Analysis.SUPPRESSIONS, "SyntaxError: boom", 1))
+
+        assert finding.status == Status.FAILED
+        assert "SyntaxError: boom" in finding.details
 
 
 class TestAdvisoryTools:

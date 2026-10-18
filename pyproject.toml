@@ -29,7 +29,10 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
     "pytest-mock>=3.16.0",
+    "pyyaml>=6.0.3",
     "ruff>=0.16.9",
+    "schemathesis>=4.31.1",
+    "types-pyyaml>=6.0.12.20260906",
     "vulture>=2.16",
     "xenon>=0.9.3",
 ]

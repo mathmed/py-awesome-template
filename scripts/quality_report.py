@@ -15,6 +15,9 @@ MAX_DETAILS_CHARS = 6000
 MAX_SURVIVORS_LISTED = 50
 # Must match scripts/mutation.py, which prints this line followed by a JSON document
 MUTATION_RESULT_PREFIX = "MUTATION_RESULT: "
+# Must match scripts/suppressions.py, which prints this line followed by a JSON document
+SUPPRESSIONS_RESULT_PREFIX = "SUPPRESSIONS_RESULT: "
+MAX_SUPPRESSION_CHANGES_LISTED = 50
 UV_NOISE = re.compile(r"^warning: `VIRTUAL_ENV=.*$", re.MULTILINE)
 
 
@@ -30,6 +33,9 @@ class Analysis(StrEnum):
     IMPORT_LINTER = "import-linter"
     SMOKE = "smoke"
     MUTATION = "mutation"
+    SUPPRESSIONS = "suppressions"
+    SCHEMATHESIS = "schemathesis"
+    OASDIFF = "oasdiff"
 
 
 class Status(StrEnum):
@@ -101,9 +107,12 @@ SECTIONS = [
     Section("Security (bandit + pip-audit)", "security", (Analysis.BANDIT, Analysis.PIP_AUDIT)),
     Section("Dead code (vulture)", "dead-code", (Analysis.VULTURE,)),
     Section("Complexity (xenon)", "complexity", (Analysis.XENON,)),
+    Section("Suppressions (ratchet)", "suppressions", (Analysis.SUPPRESSIONS,)),
     Section("Tests and coverage (pytest)", "tests", (Analysis.PYTEST,)),
     Section("Architecture (import-linter)", "lint-imports", (Analysis.IMPORT_LINTER,)),
     Section("Boot smoke (/health and /ready)", "smoke", (Analysis.SMOKE,)),
+    Section("API contract (schemathesis)", "contract", (Analysis.SCHEMATHESIS,)),
+    Section("Breaking API changes (oasdiff)", "openapi-diff", (Analysis.OASDIFF,)),
     Section("Mutation testing (mutmut)", "mutation", (Analysis.MUTATION,)),
 ]
 
@@ -298,6 +307,109 @@ def analyze_smoke(fragment: Fragment) -> Finding:
     )
 
 
+SCHEMATHESIS_VERDICT = re.compile(r"^=+ (?P<verdict>.+?) in [\d.]+s =+$", re.MULTILINE)
+SCHEMATHESIS_FAILURE = re.compile(r"^\s*❌ (?P<check>[^:\n]+): (?P<count>\d+)$", re.MULTILINE)
+SCHEMATHESIS_OPERATIONS = r"Operations:\s+\d+ selected / (\d+) total"
+MAX_API_LOG_CHARS = 2000
+# Must match API_LABEL in scripts/contract.sh
+CONTRACT_LABEL = "contract"
+
+
+def between(text: str, start: str, end: str) -> str:
+    begin = text.find(start)
+    if begin < 0:
+        return ""
+    finish = text.find(end, begin)
+    return text[begin + len(start) : finish if finish >= 0 else None].strip("= \n")
+
+
+def api_logs(output: str, label: str) -> str:
+    parts = output.split(f">> {label} FAILED. API logs:", 1)
+    return parts[1].strip() if len(parts) == 2 else ""
+
+
+def schemathesis_scope(output: str) -> str:
+    cases = first_int(r"(\d+) generated", output)
+    operations = first_int(SCHEMATHESIS_OPERATIONS, output)
+    seed = re.search(r"^Seed: (.+)$", output, re.MULTILINE)
+    scope = (
+        f"{plural(cases, 'test case', 'test cases')} on "
+        f"{plural(operations, 'operation', 'operations')}"
+    )
+    return f"{scope} · seed {seed[1]}" if seed else scope
+
+
+def schemathesis_details(output: str) -> str:
+    failures = tail(between(output, " FAILURES ", " SUMMARY "))
+    logs = api_logs(output, CONTRACT_LABEL)
+    if not logs:
+        return failures
+    return f"{failures}\n\n--- API logs ---\n{tail(logs, MAX_API_LOG_CHARS)}"
+
+
+def analyze_schemathesis(fragment: Fragment) -> Finding:
+    output = clean(fragment.output)
+    if fragment.passed:
+        return Finding(Status.OK, f"No contract violations · {schemathesis_scope(output)}")
+    verdicts = SCHEMATHESIS_VERDICT.findall(output)
+    if not verdicts:
+        reasons = re.findall(rf"^>> {CONTRACT_LABEL}: (.+)$", output, re.MULTILINE)
+        cause = f": {reasons[-1]}" if reasons else ""
+        details = api_logs(output, CONTRACT_LABEL) or output
+        return Finding(Status.FAILED, f"Contract test did not run{cause}", tail(details), "Output")
+    checks = "; ".join(
+        f"{match['check']} ({match['count']})" for match in SCHEMATHESIS_FAILURE.finditer(output)
+    )
+    summary = f"{verdicts[-1]}: {checks}" if checks else verdicts[-1]
+    return Finding(
+        Status.FAILED,
+        f"{summary} · {schemathesis_scope(output)}",
+        schemathesis_details(output),
+        "Failures (reproduce with `make contract`)",
+    )
+
+
+OASDIFF_COUNTS = re.compile(
+    r"^(?P<total>\d+) changes?: (?P<errors>\d+) error, (?P<warnings>\d+) warning, \d+ info$",
+    re.MULTILINE,
+)
+OASDIFF_ENTRY = re.compile(
+    r"^(?P<level>error|warning|info)\t\[(?P<rule>[^\]]+)\][^\n]*\n\tin (?P<where>[^\n]+)\n"
+    r"\t\t(?P<text>[^\n]+)",
+    re.MULTILINE,
+)
+
+
+def oasdiff_listing(output: str) -> str:
+    return "\n".join(
+        f"{m['level']:7} {m['where']}: {m['text']} [{m['rule']}]"
+        for m in OASDIFF_ENTRY.finditer(output)
+    )
+
+
+def analyze_oasdiff(fragment: Fragment) -> Finding:
+    output = clean(fragment.output)
+    if fragment.passed and "No changes detected" in output:
+        return Finding(Status.OK, "No API changes")
+    counts = OASDIFF_COUNTS.search(output)
+    errors = int(counts["errors"]) if counts else 0
+    if counts is None or (errors == 0 and not fragment.passed):
+        return Finding(Status.FAILED, "OpenAPI diff failed before comparing", tail(output))
+    total, warnings = int(counts["total"]), int(counts["warnings"])
+    listing = tail(oasdiff_listing(output))
+    if errors:
+        summary = f"{plural(errors, 'breaking change', 'breaking changes')} out of {total}"
+        return Finding(Status.FAILED, summary, listing, "API changes")
+    if warnings:
+        summary = (
+            f"{plural(warnings, 'possible breaking change', 'possible breaking changes')} "
+            f"(warning) out of {total}"
+        )
+        return Finding(Status.WARNING, summary, listing, "API changes")
+    summary = f"{plural(total, 'API change', 'API changes')}, none breaking"
+    return Finding(Status.OK, summary, listing, "API changes")
+
+
 @dataclass(frozen=True)
 class Survivor:
     file: str
@@ -365,6 +477,87 @@ def analyze_mutation(fragment: Fragment) -> Finding:
     return Finding(status, summary, details, "Survivors")
 
 
+@dataclass(frozen=True)
+class SuppressionChange:
+    path: str
+    kind: str
+    baseline: int
+    current: int
+    lines: list[int]
+
+    @property
+    def is_increase(self) -> bool:
+        return self.current > self.baseline
+
+
+@dataclass(frozen=True)
+class SuppressionOutcome:
+    total: int
+    totals: dict[str, int]
+    changes: list[SuppressionChange]
+
+    @property
+    def increases(self) -> list[SuppressionChange]:
+        return [change for change in self.changes if change.is_increase]
+
+    @classmethod
+    def parse(cls, output: str) -> SuppressionOutcome | None:
+        line = next(
+            (line for line in output.splitlines() if line.startswith(SUPPRESSIONS_RESULT_PREFIX)),
+            None,
+        )
+        if line is None:
+            return None
+        data = json.loads(line.removeprefix(SUPPRESSIONS_RESULT_PREFIX))
+        return cls(
+            total=int(data["total"]),
+            totals={str(kind): int(count) for kind, count in data["totals"].items()},
+            changes=[SuppressionChange(**item) for item in data["changes"]],
+        )
+
+
+def suppression_changes_table(changes: list[SuppressionChange]) -> str:
+    rows = [
+        "| File | Kind | Baseline → current | Lines |",
+        "| --- | --- | --- | --- |",
+        *(
+            f"| `{c.path}` | {c.kind} | {c.baseline} → {c.current} | "
+            f"{', '.join(map(str, c.lines)) or '-'} |"
+            for c in changes[:MAX_SUPPRESSION_CHANGES_LISTED]
+        ),
+    ]
+    hidden = len(changes) - MAX_SUPPRESSION_CHANGES_LISTED
+    if hidden > 0:
+        rows.append(f"\n... and {hidden} more. Run `make suppressions` for the full list.")
+    return "\n".join(rows)
+
+
+def analyze_suppressions(fragment: Fragment) -> Finding:
+    output = clean(fragment.output)
+    outcome = SuppressionOutcome.parse(output)
+    if outcome is None:
+        return Finding(
+            Status.FAILED, "suppression check failed before producing a result", tail(output)
+        )
+    if outcome.increases:
+        added = sum(c.current - c.baseline for c in outcome.increases)
+        summary = f"{plural(added, 'new suppression', 'new suppressions')} above the baseline"
+        details = suppression_changes_table(outcome.increases)
+        return Finding(Status.FAILED, summary, details, "New suppressions")
+    if outcome.changes:
+        removed = sum(c.baseline - c.current for c in outcome.changes)
+        summary = (
+            f"{plural(removed, 'suppression', 'suppressions')} removed but still counted in the "
+            "baseline: run `make suppressions-update`"
+        )
+        return Finding(
+            Status.FAILED, summary, suppression_changes_table(outcome.changes), "Stale baseline"
+        )
+    listing = "\n".join(f"{kind}: {count}" for kind, count in outcome.totals.items())
+    summary = f"{plural(outcome.total, 'suppression', 'suppressions')}, matching the baseline"
+    return Finding(Status.OK, summary, listing, "By kind")
+
+
 ANALYZERS: dict[Analysis, Callable[[Fragment], Finding]] = {
     Analysis.RUFF_CHECK: analyze_ruff_check,
     Analysis.RUFF_FORMAT: analyze_ruff_format,
@@ -377,6 +570,9 @@ ANALYZERS: dict[Analysis, Callable[[Fragment], Finding]] = {
     Analysis.IMPORT_LINTER: analyze_import_linter,
     Analysis.SMOKE: analyze_smoke,
     Analysis.MUTATION: analyze_mutation,
+    Analysis.SUPPRESSIONS: analyze_suppressions,
+    Analysis.SCHEMATHESIS: analyze_schemathesis,
+    Analysis.OASDIFF: analyze_oasdiff,
 }
 
 
