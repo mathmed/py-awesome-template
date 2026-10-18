@@ -19,7 +19,7 @@ A production-ready starting point for Python 3.14 APIs with FastAPI: a layered f
 - **Production basics**: typed settings ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)), JSON logs in production, configurable CORS, domain errors mapped to HTTP status codes and `/health` (liveness) and `/ready` (readiness) routes.
 - **Deterministic validation for AI-generated code**: a boot smoke test, API contract tests (Schemathesis), breaking-change detection on the OpenAPI schema (oasdiff), architecture contracts, mutation testing and a suppression ratchet, with the pipeline files protected by `CODEOWNERS` (see [Validation layers](#validation-layers)).
 - **Docker**: a `dev` stage with hot reload and a slim, non-root `production` stage with healthcheck.
-- **AI-ready**: `CLAUDE.md`/`AGENTS.md` with the project rules, Claude Code agents (`coder`, `reviewer`), permissions and a hook that formats every file the agent edits.
+- **AI-ready**: `CLAUDE.md`/`AGENTS.md` with the project rules, Claude Code agents (`coder`, `pr-writer`, `reviewer`), a PR template built for fast review, permissions and a hook that formats every file the agent edits.
 
 ## Getting started
 
@@ -270,11 +270,29 @@ The domain never imports from `infra`, `presentation` or `common`: it declares c
 The template is ready for coding agents such as [Claude Code](https://docs.claude.com/en/docs/claude-code/overview):
 
 - **`CLAUDE.md`** (also `AGENTS.md`, a symlink read by Cursor, Codex and others): architecture rules, commands and the checklist every change must pass before a PR.
-- **`.claude/agents/coder.md`**: implements a task on a `claude/<slug>` branch, with tests, runs all checks and opens a PR.
+- **`.claude/agents/coder.md`**: implements a task on a `claude/<slug>` branch, with tests, runs all checks, commits, pushes and leaves handoff notes. It opens the PR itself only as a fallback.
+- **`.claude/agents/pr-writer.md`**: reads the pushed branch cold, commit by commit, fills the PR template, assigns the risk level, opens the PR with its `risk:<level>` label and stops. Never writes code, never merges.
 - **`.claude/agents/reviewer.md`**: read-only review of a branch against the project rules.
 - **`.claude/settings.json`**: allows the common commands (uv, make, read-only git, gh), denies destructive ones (`rm -rf`, force push, hard reset, reading `.env`) and runs `.claude/hooks/ruff.sh` after every edit, formatting the file and sending unfixable lint errors back to the agent.
 
 Create an empty `.local_dev` file at the root to work directly on your local branch: the agent then edits files without delegating to `coder` or opening PRs.
+
+### Pull request flow
+
+Reading AI-written diffs is the bottleneck, so the PR description tells the reviewer how much attention the PR deserves and what changed in behavior and in rules, written by an agent that did not write the code:
+
+1. **`coder`** implements on a branch, runs every check, commits one logical step per commit, pushes and writes **handoff notes** to `.handoff/<branch>.md` (gitignored): the task verbatim, what was done and why, decisions, deploy notes and an explicit **Not verified** list. It does not open the PR or assess the risk.
+2. **`pr-writer`** (Opus) gets the task, the branch and the notes. It reads the diff commit by commit, writes behavior items per commit and aggregates them, and fills `.github/pull_request_template.md`:
+   - **Risk**: `low | medium | high | critical` with one line of why. It assigns the level itself, never below `make risk-floor` (pipeline config, migrations and auth are `high`), and at least `medium` when there are deploy steps;
+   - **Summary**: one sentence on what changes in behavior and why;
+   - **Behavior**: at most five *before → after* items about rules and observable behavior, never "file X changed", each with a clickable permalink to the test or function that proves it, or "none found";
+   - **Unchanged**, **Look here** (what deserves human eyes), **Deploy steps** (always present; "None: normal merge and deploy." when nothing is needed) and an honest **Not verified**, plus a **Mismatch** line when the diff contradicts the handoff notes.
+
+   It opens the PR with the `risk:<level>` label (creating the labels if missing) and stops.
+3. **Fallback**: if `pr-writer` fails, `coder` opens the PR with a minimal body (summary plus the template headings, risk "unassessed", no label), so a failure never blocks delivery; the [Risk label](#risk-floors-and-the-risk-label) check stays red until a person sets the label.
+4. **Merge**: only the owner merges. The Quality Report comment and the Risk label check run on every PR.
+
+People opening PRs by hand get the same template from GitHub.
 
 > [!NOTE]
 > The **Personal preferences** section of `CLAUDE.md` holds the template author's own taste (no docstrings, `StrEnum` for fixed strings, latest dependency versions, etc.). They are not part of the architecture — change or remove them to match yours.
@@ -303,6 +321,7 @@ Create an empty `.local_dev` file at the root to work directly on your local bra
 | `.env.example`               | Environment variables template.                                         |
 | `.github/workflows/ci.yml`   | CI pipeline: one job per analysis plus the `quality-report` job.        |
 | `.github/dependabot.yaml`    | Dependency updates.                                                     |
+| `.github/pull_request_template.md` | PR description structure: risk, behavior, look here, deploy steps. |
 | `.vscode/settings.json`      | Ruff format on save and pytest integration.                             |
 | `CLAUDE.md` / `AGENTS.md`    | Instructions for AI coding agents.                                      |
 | `.claude/`                   | Claude Code agents, permissions and hooks.                              |

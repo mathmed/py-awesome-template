@@ -64,7 +64,8 @@ tests/integration/ HTTP tests with TestClient
 
 1. The app imports: `uv run python -c "import app.main.main"`.
 2. New environment variables have a default or an entry in `.env.example`.
-3. `make hooks`, `make test`, `make lint-imports` and `make smoke` pass. A PR with failing checks is not a PR.
+3. `make hooks`, `make test`, `make lint-imports`, `make smoke` and `make contract` pass, and so does
+   `make openapi-diff` when `oasdiff` is installed (CI always runs it). A PR with failing checks is not a PR.
 4. Existing routes are not removed or renamed unless the task asks for it.
 5. The README is updated if the change affects setup, commands, routes, env vars or architecture.
 
@@ -100,12 +101,36 @@ tests/integration/ HTTP tests with TestClient
 
 ## Workflow
 
-- Code changes are delegated to the `coder` agent (`.claude/agents/coder.md`), which creates a branch,
-  implements, commits and opens a PR. Never commit directly to `main`.
+1. **Implement**: code changes are delegated to the `coder` agent (`.claude/agents/coder.md`), which creates
+   a branch, implements, commits (one commit per logical step), pushes and writes the handoff notes. It does
+   not open the PR and does not assess the risk. Never commit directly to `main`.
+2. **Describe and open**: then delegate to the `pr-writer` agent (`.claude/agents/pr-writer.md`) with the
+   original task verbatim, the branch, the base branch and the path of the handoff notes. It reads the diff
+   cold, commit by commit, fills `.github/pull_request_template.md`, assigns the risk level (never below
+   `make risk-floor`, at least medium when there are deploy steps), opens the PR with the `risk:<level>`
+   label and stops. It never writes code.
+3. **Fallback**: if `pr-writer` fails or cannot run, delegate back to `coder` saying so: it opens the PR
+   itself with a minimal body (summary plus the template headings, risk "unassessed", no risk label), so a
+   failure never blocks delivery. The Risk label check stays red until a person sets the label.
+4. **Merge**: nobody but the owner merges. Agents never merge, approve or enable auto-merge.
+
 - **Exception**: if a `.local_dev` file exists at the repository root, the developer is working locally —
-  edit files directly, without delegating to `coder` and without creating commits or PRs.
+  edit files directly, without delegating to `coder` or `pr-writer` and without creating commits or PRs.
 - Use the `reviewer` agent (`.claude/agents/reviewer.md`) to review a branch against these rules before
   merging.
+
+### Handoff notes
+
+The `coder` writes them to `.handoff/<branch>.md` (every `/` of the branch name replaced with `-`; the
+directory is gitignored) after pushing. `pr-writer` checks them against the diff and reports a **Mismatch**
+when they disagree. Sections, in this order:
+
+- `## Task`: the original task, verbatim.
+- `## Done`: what changed and why, one line per item.
+- `## Decisions`: choices made, alternatives rejected, conservative options taken on non-blocking doubts.
+- `## Deploy notes`: new env vars or secrets, migrations and their order, flags, external configuration; or
+  "None".
+- `## Not verified`: everything the author did not or could not check, and why; or "nothing".
 
 ## Personal preferences
 
