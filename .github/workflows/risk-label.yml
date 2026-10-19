@@ -10,10 +10,16 @@ on:
 
 permissions:
   contents: read
+  # Reads the PR's labels when the job runs
+  pull-requests: read
 
+# Runs of the same PR queue instead of cancelling each other: opening a PR with its label fires `opened`
+# and `labeled` together, and cancel-in-progress left a cancelled check on every PR. Dropping the group
+# would let an older run finish last and decide the check. GitHub keeps one pending run per group, so 3+
+# events at once (Dependabot adds three labels) still cancel the pending ones in between
 concurrency:
   group: risk-label-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   risk-label:
@@ -30,6 +36,12 @@ jobs:
       - name: Risk label is at or above the floor
         env:
           # Passed through the environment, never interpolated into the script
-          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_REF: origin/${{ github.base_ref }}
-        run: uv run --locked python scripts/risk.py --base "$BASE_REF" check --labels-json "$PR_LABELS"
+          GH_TOKEN: ${{ github.token }}
+        # The labels come from the API, not from the event payload: the payload is a snapshot of when the
+        # event fired, and `gh pr create --label` adds the label in a second call, so the `opened` run of
+        # every PR saw no labels (and a run from an older event could judge labels that already changed)
+        run: |
+          labels=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels?per_page=100" --jq '[.[].name]')
+          uv run --locked python scripts/risk.py --base "$BASE_REF" check --labels-json "$labels"
