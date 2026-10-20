@@ -9,10 +9,11 @@ updates:
       time: "09:00"
       timezone: "America/Sao_Paulo"
     open-pull-requests-limit: 100
+    # Bumps are born risk:low; relabel a major bump by hand when it changes behavior.
     # Labels must exist: run `make risk-labels` once.
     labels:
       - "dependencies"
-      - "risk:high"
+      - "risk:low"
     # Supply-chain safety: give the community time to detect malicious or broken releases.
     cooldown:
       default-days: 10
@@ -36,9 +37,10 @@ updates:
       time: "09:00"
       timezone: "America/Sao_Paulo"
     open-pull-requests-limit: 50
+    # Born risk:low, like the uv updates above
     labels:
       - "dependencies"
-      - "risk:high"
+      - "risk:low"
     # Supply-chain safety: give the community time to detect malicious or broken releases.
     cooldown:
       default-days: 10

@@ -180,7 +180,7 @@ Every PR carries exactly one `risk:low`, `risk:medium`, `risk:high` or `risk:cri
 
 The **Risk label** workflow (`.github/workflows/risk-label.yml`) runs `scripts/risk.py check` on every push and every label change and fails when the PR has no risk label, more than one, or an unknown one. It reads the labels from the API when it runs (not from the event that triggered it), and runs of the same PR queue instead of cancelling each other, so the final result applies to the current labels. It is a separate workflow so that changing a label does not re-run the whole CI, and for that reason it is not part of the Quality Report. The check does not require a specific reviewer's approval; merging stays with the owner.
 
-Create the labels once with `make risk-labels` (idempotent: `gh label create --force`).
+Create the labels once with `make risk-labels` (idempotent: `gh label create --force`). Dependabot PRs are born `risk:low` through `labels` in `.github/dependabot.yaml`; relabel a major bump by hand when it changes behavior.
 
 ## Quality Report
 
