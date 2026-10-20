@@ -9,8 +9,7 @@ updates:
       time: "09:00"
       timezone: "America/Sao_Paulo"
     open-pull-requests-limit: 100
-    # Dependency bumps touch pyproject.toml, which is pipeline config: never below high
-    # (.github/risk-floors.yaml). Labels must exist: run `make risk-labels` once.
+    # Labels must exist: run `make risk-labels` once.
     labels:
       - "dependencies"
       - "risk:high"
@@ -37,7 +36,6 @@ updates:
       time: "09:00"
       timezone: "America/Sao_Paulo"
     open-pull-requests-limit: 50
-    # Workflow changes are pipeline config: never below high (.github/risk-floors.yaml)
     labels:
       - "dependencies"
       - "risk:high"

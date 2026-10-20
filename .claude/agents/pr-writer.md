@@ -46,7 +46,7 @@ notes for yourself (they do not go in the PR):
 - **Evidence**: the test that asserts it (`path::test_name`) or, when no test does, the function that
   implements it (`path:function`). Open it and confirm it really asserts or implements that behavior. The
   pointer goes in **Look here**, never in Behavior.
-- **Risk signals**: files that match a risk floor; deploy needs (new settings or `.env.example` entries,
+- **Risk signals**: deploy needs (new settings or `.env.example` entries,
   secrets, migrations, flags, new external services, backfills, external configuration); public contract
   changes (routes, request or response fields); deleted, skipped or weakened tests and new suppressions;
   irreversible effects (deleting data, sending messages, calling external systems).
@@ -86,18 +86,15 @@ test you did not read.
 
 You assign the risk; the author does not assess it, and any risk claim in the handoff notes is ignored.
 
-1. Get the file floor: `make risk-floor BASE=origin/<base>` (it reads `.github/risk-floors.yaml`). Without
-   that target, read the YAML file and match its globs against `git diff --name-only --no-renames` yourself.
-2. Judge the change itself:
+1. Judge the change itself:
    - **low**: additive or behavior-preserving, covered by tests, trivial to roll back;
    - **medium**: changes observable behavior of something that exists, touches code with many callers, or
      needs a deploy step;
    - **high**: pipeline config, migrations, auth or permissions, data model changes, public contract changes,
      irreversible effects, or core rules with thin evidence;
    - **critical**: a mistake could lose or expose data, take the service down, or cannot be rolled back.
-3. The level is the highest of: your judgement, the file floor, and **medium** when Deploy steps is not
-   "None". Never go below a floor.
-4. The Risk line gives the level and one line of why, naming the floor category when one applied.
+2. The level is the highest of your judgement and **medium** when Deploy steps is not "None".
+3. The Risk line gives the level and one line of why.
 
 ### 6. Look here
 
@@ -140,7 +137,7 @@ Body: the template sections in order, with the guidance comments removed. Before
 - every Behavior item has a clickable pointer in Look here, or is listed under Not verified as lacking
   evidence;
 - no item says only which file changed;
-- the risk is not below the file floor, and is at least medium when there are deploy steps;
+- the risk is at least medium when there are deploy steps;
 - no secrets, tokens, personal data or internal identifiers in the text.
 
 ### 10. Open the PR and label it

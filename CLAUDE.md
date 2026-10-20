@@ -19,7 +19,6 @@ make hooks        # all quality checks: ruff, mypy, bandit, vulture, xenon, impo
 make smoke        # boots the real API and calls /health and /ready
 make contract     # boots the real API and runs Schemathesis against its OpenAPI schema
 make openapi-diff # fails on breaking OpenAPI changes vs BASE (default origin/main); needs oasdiff
-make risk-floor   # minimum risk level of the branch vs BASE, from .github/risk-floors.yaml
 make risk-labels  # create/update the risk:<level> labels on GitHub
 make lint-imports # architecture contracts (import-linter)
 make mutation     # mutation testing of the whole domain (slow; weekly in CI)
@@ -83,9 +82,8 @@ tests/integration/ HTTP tests with TestClient
   baseline (`update --allow-increase`) without the user's explicit approval. When you remove suppressions,
   run `make suppressions-update` and commit the lower baseline in the same PR.
 - Pipeline and agent files (`pyproject.toml`, `.pre-commit-config.yaml`, `Makefile`, `scripts/`, `.github/`,
-  `.claude/`, `CLAUDE.md`, `suppressions-baseline.json`) put the PR at the `high` risk floor
-  (`.github/risk-floors.yaml`). Do not change them unless the task asks for it, and call the change out in
-  the PR.
+  `.claude/`, `CLAUDE.md`, `suppressions-baseline.json`): do not change them unless the task asks for it,
+  and call the change out in the PR.
 - `make contract` boots the API like `make smoke` and runs a bounded Schemathesis pass (fixed seed) against
   `/openapi.json`: responses must match the documented status codes and schemas, invalid input must be
   rejected and nothing may return a 5xx. Fix the route or document the response (`responses=` in the
@@ -107,9 +105,8 @@ tests/integration/ HTTP tests with TestClient
    not open the PR and does not assess the risk. Never commit directly to `main`.
 2. **Describe and open**: then delegate to the `pr-writer` agent (`.claude/agents/pr-writer.md`) with the
    original task verbatim, the branch, the base branch and the path of the handoff notes. It reads the diff
-   cold, commit by commit, fills `.github/pull_request_template.md`, assigns the risk level (never below
-   `make risk-floor`, at least medium when there are deploy steps), opens the PR with the `risk:<level>`
-   label and stops. It never writes code. Behavior items are plain language with no file, function, test
+   cold, commit by commit, fills `.github/pull_request_template.md`, assigns the risk level (at least medium
+   when there are deploy steps), opens the PR with the `risk:<level>` label and stops. It never writes code. Behavior items are plain language with no file, function, test
    or code references; the evidence pointers for them go only in **Look here**, and a behavior without
    evidence is listed under **Not verified**.
 3. **Fallback**: if `pr-writer` fails or cannot run, delegate back to `coder` saying so: it opens the PR

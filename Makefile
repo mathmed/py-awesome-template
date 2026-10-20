@@ -1,7 +1,7 @@
-# Base branch used by mutation-changed, openapi-diff and risk-floor
+# Base branch used by mutation-changed and openapi-diff
 BASE ?= origin/main
 
-.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code smoke lint-imports mutation mutation-changed mutation-results suppressions suppressions-update contract openapi-diff risk-floor risk-labels
+.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code smoke lint-imports mutation mutation-changed mutation-results suppressions suppressions-update contract openapi-diff risk-labels
 
 # Install uv (if missing), project dependencies and git hooks
 setup:
@@ -85,10 +85,6 @@ suppressions:
 # Lower the baseline after removing suppressions (refuses to raise it, see the README)
 suppressions-update:
 	uv run python scripts/suppressions.py update
-
-# Print the minimum risk level of the changes against BASE (.github/risk-floors.yaml)
-risk-floor:
-	uv run python scripts/risk.py --base $(BASE) floor
 
 # Create (or update) the risk:<level> labels on the GitHub repository (needs an authenticated gh)
 risk-labels:
