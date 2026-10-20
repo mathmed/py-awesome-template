@@ -88,7 +88,7 @@ suppressions-update:
 
 # Create (or update) the risk:<level> labels on the GitHub repository (needs an authenticated gh)
 risk-labels:
-	gh label create "risk:low" --color 0E8A16 --description "Low risk: routine change" --force
-	gh label create "risk:medium" --color FBCA04 --description "Medium risk: deploy steps or wider impact" --force
-	gh label create "risk:high" --color D93F0B --description "High risk: pipeline config, migrations, auth or core rules" --force
-	gh label create "risk:critical" --color B60205 --description "Critical risk: needs the closest review" --force
+	gh label create "risk:low" --color 0E8A16 --description "Low risk: no behavior change" --force
+	gh label create "risk:medium" --color FBCA04 --description "Medium risk: new behavior or a deploy step" --force
+	gh label create "risk:high" --color D93F0B --description "High risk: can break production, recoverable by revert" --force
+	gh label create "risk:critical" --color B60205 --description "Critical risk: hard to revert, users, money or data at stake" --force

@@ -176,7 +176,7 @@ It runs as a pre-commit hook, in `make hooks` and as the `suppressions` CI job. 
 
 ### Risk label
 
-Every PR carries exactly one `risk:low`, `risk:medium`, `risk:high` or `risk:critical` label, assigned by the `pr-writer` agent when it opens the PR (see [Pull request flow](#pull-request-flow)). The level is a judgement about what the change can break, not a function of the files it touches.
+Every PR carries exactly one `risk:low`, `risk:medium`, `risk:high` or `risk:critical` label, assigned by the `pr-writer` agent when it opens the PR (see [Pull request flow](#pull-request-flow)). The level is a judgement about what the change can break, not a function of the files it touches: most PRs are `low` or `medium`, so `high` and `critical` stand out (rubric in `.claude/agents/pr-writer.md`).
 
 The **Risk label** workflow (`.github/workflows/risk-label.yml`) runs `scripts/risk.py check` on every push and every label change and fails when the PR has no risk label, more than one, or an unknown one. It reads the labels from the API when it runs (not from the event that triggered it), and runs of the same PR queue instead of cancelling each other, so the final result applies to the current labels. It is a separate workflow so that changing a label does not re-run the whole CI, and for that reason it is not part of the Quality Report. The check does not require a specific reviewer's approval; merging stays with the owner.
 
@@ -267,7 +267,7 @@ Reading AI-written diffs is the bottleneck, so the PR description tells the revi
 
 1. **`coder`** implements on a branch, runs every check, commits one logical step per commit, pushes and writes **handoff notes** to `.handoff/<branch>.md` (gitignored): the task verbatim, what was done and why, decisions, deploy notes and an explicit **Not verified** list. It does not open the PR or assess the risk.
 2. **`pr-writer`** (Opus) gets the task, the branch and the notes. It reads the diff commit by commit, writes behavior items per commit and aggregates them, and fills `.github/pull_request_template.md`:
-   - **Risk**: `low | medium | high | critical` with one line of why. It assigns the level itself, and at least `medium` when there are deploy steps;
+   - **Risk**: `low | medium | high | critical` with one line of why. It assigns the level itself by judgement, defaulting to `low` (no behavior change: docs, tests, CI, dependency patch or minor bumps, refactors covered by tests) or `medium` (new behavior, a new endpoint or option, or any deploy step). `high` is for changes that can break production or change existing behavior drastically but are recoverable by revert; `critical` for failures that take down what users or money depend on, leak data or cut the only way to recover. High and critical need one concrete sentence naming what can break, otherwise the level is lowered; touching pipeline files is not by itself a reason for `high`;
    - **Summary**: one sentence on what changes in behavior and why;
    - **Behavior**: at most five *before → after* items about rules and observable behavior, in plain words for someone who has not read the code: no file, function, test or code references;
    - **Unchanged**;

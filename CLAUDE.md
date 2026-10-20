@@ -105,8 +105,10 @@ tests/integration/ HTTP tests with TestClient
    not open the PR and does not assess the risk. Never commit directly to `main`.
 2. **Describe and open**: then delegate to the `pr-writer` agent (`.claude/agents/pr-writer.md`) with the
    original task verbatim, the branch, the base branch and the path of the handoff notes. It reads the diff
-   cold, commit by commit, fills `.github/pull_request_template.md`, assigns the risk level (at least medium
-   when there are deploy steps), opens the PR with the `risk:<level>` label and stops. It never writes code. Behavior items are plain language with no file, function, test
+   cold, commit by commit, fills `.github/pull_request_template.md`, assigns the risk level by the rubric in
+   that file (most PRs low or medium; high or critical only with one concrete sentence naming what can
+   break; at least medium when there are deploy steps), opens the PR with the `risk:<level>` label and
+   stops. It never writes code. Behavior items are plain language with no file, function, test
    or code references; the evidence pointers for them go only in **Look here**, and a behavior without
    evidence is listed under **Not verified**.
 3. **Fallback**: if `pr-writer` fails or cannot run, delegate back to `coder` saying so: it opens the PR

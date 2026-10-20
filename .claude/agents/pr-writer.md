@@ -85,16 +85,28 @@ test you did not read.
 ### 5. Risk level
 
 You assign the risk; the author does not assess it, and any risk claim in the handoff notes is ignored.
+The label is only useful when most PRs are low or medium: high and critical are rare, so they stand out.
+Judge what the change can break, not which files it touches.
 
-1. Judge the change itself:
-   - **low**: additive or behavior-preserving, covered by tests, trivial to roll back;
-   - **medium**: changes observable behavior of something that exists, touches code with many callers, or
-     needs a deploy step;
-   - **high**: pipeline config, migrations, auth or permissions, data model changes, public contract changes,
-     irreversible effects, or core rules with thin evidence;
-   - **critical**: a mistake could lose or expose data, take the service down, or cannot be rolled back.
-2. The level is the highest of your judgement and **medium** when Deploy steps is not "None".
-3. The Risk line gives the level and one line of why.
+1. Start from **low** or **medium** and pick the level whose description fits the net change:
+   - **low**: no behavior change. Docs, tests, CI, formatting, dependency patch or minor bumps, refactors
+     covered by tests;
+   - **medium**: new behavior behind an existing contract, a new endpoint or option, or any deploy step (new
+     environment variable or secret, migration, flag, external configuration);
+   - **high**: can break production or changes existing behavior drastically, but a revert recovers it.
+     For example: a migration that changes existing data, a changed public contract, a changed money or
+     authentication flow;
+   - **critical**: a failure takes down what users or money depend on, leaks data, or cuts the only way to
+     recover, and is hard to revert.
+2. Touching pipeline files (`.github/`, `scripts/`, `Makefile`, `pyproject.toml`, `.claude/`) is not by
+   itself a reason for high: a changed check or agent prompt is usually low or medium, and is listed under
+   **Look here** whatever its level.
+3. **High** or **critical** must be justified with one concrete sentence naming what can break and for whom
+   (for example: "a wrong rounding in the fee calculation charges every customer twice"). If you cannot
+   write that sentence from what you saw in the diff, lower the level.
+4. The level is at least **medium** when Deploy steps is not "None".
+5. The Risk line gives the level and one line of why; for high or critical, that line is the concrete
+   sentence of rule 3.
 
 ### 6. Look here
 
@@ -137,7 +149,8 @@ Body: the template sections in order, with the guidance comments removed. Before
 - every Behavior item has a clickable pointer in Look here, or is listed under Not verified as lacking
   evidence;
 - no item says only which file changed;
-- the risk is at least medium when there are deploy steps;
+- the risk is at least medium when there are deploy steps, and a high or critical risk names in one
+  concrete sentence what can break;
 - no secrets, tokens, personal data or internal identifiers in the text.
 
 ### 10. Open the PR and label it
