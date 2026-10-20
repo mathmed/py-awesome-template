@@ -101,12 +101,15 @@ Judge what the change can break, not which files it touches.
 2. Touching pipeline files (`.github/`, `scripts/`, `Makefile`, `pyproject.toml`, `.claude/`) is not by
    itself a reason for high: a changed check or agent prompt is usually low or medium, and is listed under
    **Look here** whatever its level.
-3. **High** or **critical** must be justified with one concrete sentence naming what can break and for whom
+3. Before choosing **high** or **critical**, read the `## Critical surfaces` section of `CLAUDE.md`: it
+   lists where a failure is hardest to undo in this repository. A change that touches none of them is
+   rarely high and almost never critical.
+4. **High** or **critical** must be justified with one concrete sentence naming what can break and for whom
    (for example: "a wrong rounding in the fee calculation charges every customer twice"). If you cannot
    write that sentence from what you saw in the diff, lower the level.
-4. The level is at least **medium** when Deploy steps is not "None".
-5. The Risk line gives the level and one line of why; for high or critical, that line is the concrete
-   sentence of rule 3.
+5. The level is at least **medium** when Deploy steps is not "None".
+6. The Risk line gives the level and one line of why; for high or critical, that line is the concrete
+   sentence of rule 4.
 
 ### 6. Look here
 

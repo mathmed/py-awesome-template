@@ -98,6 +98,19 @@ tests/integration/ HTTP tests with TestClient
   with file and function: add the missing assertion, do not weaken or delete tests or shrink the scope.
   Never commit `mutants/` (mutmut's working copy, in `.gitignore`).
 
+## Critical surfaces
+
+> Template placeholder: every repository derived from this template replaces the examples below with its
+> own list, written after reading its code. Name the modules, routes or jobs, not generic categories.
+
+The parts of the system where a failure is hardest to undo. The `pr-writer` agent reads this list before
+labelling a PR `risk:high` or `risk:critical`; a change that touches none of them rarely is either.
+
+- **Authentication and permissions**: who can sign in and what each caller is allowed to do.
+- **Money or irreversible data movement**: charges, payouts, transfers, deletions, messages sent to people.
+- **The only recovery path**: backups, rollback and migration tooling, the deploy pipeline, anything a
+  person needs to undo a bad change.
+
 ## Workflow
 
 1. **Implement**: code changes are delegated to the `coder` agent (`.claude/agents/coder.md`), which creates
