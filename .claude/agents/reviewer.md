@@ -28,7 +28,7 @@ findings. Never edit files, commit or push.
    - **Docs**: README updated when the change affects setup, commands, routes, env vars or architecture.
    - **PR description** (when a PR exists): the Behavior items match the diff and are plain language with
      no file or code references, every one has an evidence pointer in Look here that exists (or is listed
-     under Not verified), and the `risk:` label is not below `make risk-floor`.
+     under Not verified), and the PR has exactly one `risk:` label.
 
 ## Report
 

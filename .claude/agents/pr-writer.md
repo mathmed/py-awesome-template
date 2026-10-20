@@ -46,7 +46,7 @@ notes for yourself (they do not go in the PR):
 - **Evidence**: the test that asserts it (`path::test_name`) or, when no test does, the function that
   implements it (`path:function`). Open it and confirm it really asserts or implements that behavior. The
   pointer goes in **Look here**, never in Behavior.
-- **Risk signals**: files that match a risk floor; deploy needs (new settings or `.env.example` entries,
+- **Risk signals**: deploy needs (new settings or `.env.example` entries,
   secrets, migrations, flags, new external services, backfills, external configuration); public contract
   changes (routes, request or response fields); deleted, skipped or weakened tests and new suppressions;
   irreversible effects (deleting data, sending messages, calling external systems).
@@ -85,19 +85,31 @@ test you did not read.
 ### 5. Risk level
 
 You assign the risk; the author does not assess it, and any risk claim in the handoff notes is ignored.
+The label is only useful when most PRs are low or medium: high and critical are rare, so they stand out.
+Judge what the change can break, not which files it touches.
 
-1. Get the file floor: `make risk-floor BASE=origin/<base>` (it reads `.github/risk-floors.yaml`). Without
-   that target, read the YAML file and match its globs against `git diff --name-only --no-renames` yourself.
-2. Judge the change itself:
-   - **low**: additive or behavior-preserving, covered by tests, trivial to roll back;
-   - **medium**: changes observable behavior of something that exists, touches code with many callers, or
-     needs a deploy step;
-   - **high**: pipeline config, migrations, auth or permissions, data model changes, public contract changes,
-     irreversible effects, or core rules with thin evidence;
-   - **critical**: a mistake could lose or expose data, take the service down, or cannot be rolled back.
-3. The level is the highest of: your judgement, the file floor, and **medium** when Deploy steps is not
-   "None". Never go below a floor.
-4. The Risk line gives the level and one line of why, naming the floor category when one applied.
+1. Start from **low** or **medium** and pick the level whose description fits the net change:
+   - **low**: no behavior change. Docs, tests, CI, formatting, dependency patch or minor bumps, refactors
+     covered by tests;
+   - **medium**: new behavior behind an existing contract, a new endpoint or option, or any deploy step (new
+     environment variable or secret, migration, flag, external configuration);
+   - **high**: can break production or changes existing behavior drastically, but a revert recovers it.
+     For example: a migration that changes existing data, a changed public contract, a changed money or
+     authentication flow;
+   - **critical**: a failure takes down what users or money depend on, leaks data, or cuts the only way to
+     recover, and is hard to revert.
+2. Touching pipeline files (`.github/`, `scripts/`, `Makefile`, `pyproject.toml`, `.claude/`) is not by
+   itself a reason for high: a changed check or agent prompt is usually low or medium, and is listed under
+   **Look here** whatever its level.
+3. Before choosing **high** or **critical**, read the `## Critical surfaces` section of `CLAUDE.md`: it
+   lists where a failure is hardest to undo in this repository. A change that touches none of them is
+   rarely high and almost never critical.
+4. **High** or **critical** must be justified with one concrete sentence naming what can break and for whom
+   (for example: "a wrong rounding in the fee calculation charges every customer twice"). If you cannot
+   write that sentence from what you saw in the diff, lower the level.
+5. The level is at least **medium** when Deploy steps is not "None".
+6. The Risk line gives the level and one line of why; for high or critical, that line is the concrete
+   sentence of rule 4.
 
 ### 6. Look here
 
@@ -140,7 +152,8 @@ Body: the template sections in order, with the guidance comments removed. Before
 - every Behavior item has a clickable pointer in Look here, or is listed under Not verified as lacking
   evidence;
 - no item says only which file changed;
-- the risk is not below the file floor, and is at least medium when there are deploy steps;
+- the risk is at least medium when there are deploy steps, and a high or critical risk names in one
+  concrete sentence what can break;
 - no secrets, tokens, personal data or internal identifiers in the text.
 
 ### 10. Open the PR and label it

@@ -1,6 +1,7 @@
 ## Risk
 **<low | medium | high | critical>** — <one line: why>
-<!-- Floor: pipeline config, migrations and auth are never below high. Any deploy step other than "None" is at least medium. -->
+<!-- Most PRs are low or medium. Any deploy step other than "None" is at least medium. High or critical needs
+one concrete sentence naming what can break; without it, lower the level. -->
 
 ## Summary
 <one sentence: what changes in behavior, and why>

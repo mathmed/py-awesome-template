@@ -1,9 +1,9 @@
 name: Risk label
 
-# Checks that the PR has exactly one risk:<level> label and that it is not below the floor of the files it
-# touches (.github/risk-floors.yaml, evaluated by scripts/risk.py). It lives outside ci.yml because it must
-# also run when labels change, which would otherwise re-run every analysis; for the same reason it is not
-# part of the Quality Report. The pr-writer agent applies the label when it opens the PR.
+# Checks that the PR has exactly one known risk:<level> label (scripts/risk.py). The level is a judgement of
+# the pr-writer agent or of a person, never derived from the files touched. It lives outside ci.yml because
+# it must also run when labels change, which would otherwise re-run every analysis; for the same reason it is
+# not part of the Quality Report. The pr-writer agent applies the label when it opens the PR.
 on:
   pull_request:
     types: [opened, reopened, synchronize, labeled, unlabeled]
@@ -27,21 +27,18 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - run: uv sync --locked
-      - name: Risk label is at or above the floor
+      - name: Exactly one known risk label
         env:
           # Passed through the environment, never interpolated into the script
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          BASE_REF: origin/${{ github.base_ref }}
           GH_TOKEN: ${{ github.token }}
         # The labels come from the API, not from the event payload: the payload is a snapshot of when the
         # event fired, and `gh pr create --label` adds the label in a second call, so the `opened` run of
         # every PR saw no labels (and a run from an older event could judge labels that already changed)
         run: |
           labels=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels?per_page=100" --jq '[.[].name]')
-          uv run --locked python scripts/risk.py --base "$BASE_REF" check --labels-json "$labels"
+          uv run --locked python scripts/risk.py check --labels-json "$labels"

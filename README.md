@@ -17,7 +17,7 @@ A production-ready starting point for Python 3.14 APIs with FastAPI: a layered f
 - **CI**: every pull request runs all checks and posts a single **Quality Report** comment with the result of every analysis (see [Quality Report](#quality-report)).
 - **Dependabot**: weekly grouped updates for Python dependencies and GitHub Actions.
 - **Production basics**: typed settings ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)), JSON logs in production, configurable CORS, domain errors mapped to HTTP status codes and `/health` (liveness) and `/ready` (readiness) routes.
-- **Deterministic validation for AI-generated code**: a boot smoke test, API contract tests (Schemathesis), breaking-change detection on the OpenAPI schema (oasdiff), architecture contracts, mutation testing, a suppression ratchet and a risk floor that keeps changes to the pipeline itself at high risk (see [Validation layers](#validation-layers)).
+- **Deterministic validation for AI-generated code**: a boot smoke test, API contract tests (Schemathesis), breaking-change detection on the OpenAPI schema (oasdiff), architecture contracts, mutation testing, a suppression ratchet and a required risk label on every PR (see [Validation layers](#validation-layers)).
 - **Docker**: a `dev` stage with hot reload and a slim, non-root `production` stage with healthcheck.
 - **AI-ready**: `CLAUDE.md`/`AGENTS.md` with the project rules, Claude Code agents (`coder`, `pr-writer`, `reviewer`), a PR template built for fast review, permissions and a hook that formats every file the agent edits.
 
@@ -50,7 +50,6 @@ curl "http://localhost:8000/example?field1=hello"
 | `make smoke`       | Boot the real API and call `/health` and `/ready`.                      |
 | `make contract`    | Boot the real API and run Schemathesis against its OpenAPI schema.      |
 | `make openapi-diff` | Fail on breaking OpenAPI changes against `BASE` (default `origin/main`). |
-| `make risk-floor`  | Print the minimum risk level of the changes against `BASE`.             |
 | `make risk-labels` | Create or update the `risk:<level>` labels on GitHub (needs `gh`).      |
 | `make lint-imports` | Check the architecture contracts (import-linter).                      |
 | `make mutation`    | Mutation testing of the domain (slow); `make mutation-results` lists survivors. |
@@ -173,23 +172,15 @@ Comments are read with `tokenize` and tests with `ast`, so the same text inside 
 - **a count went down**: the check also fails until you run `make suppressions-update` and commit the lower baseline in the same PR, so the improvement is locked in and reviewed;
 - **counts match**: the check passes.
 
-It runs as a pre-commit hook, in `make hooks` and as the `suppressions` CI job. Configuration that disables checks globally (`pyproject.toml`, `.pre-commit-config.yaml`, the workflows) is not counted here: changing any of those files puts the PR at the `high` risk floor (see [Risk floors and the risk label](#risk-floors-and-the-risk-label)), and the `pr-writer` agent always lists pipeline changes under **Look here**.
+It runs as a pre-commit hook, in `make hooks` and as the `suppressions` CI job. Configuration that disables checks globally (`pyproject.toml`, `.pre-commit-config.yaml`, the workflows) is not counted here: the `pr-writer` agent always lists pipeline changes under **Look here**, so a reviewer sees when a gate changes.
 
-### Risk floors and the risk label
+### Risk label
 
-Every PR carries exactly one `risk:low`, `risk:medium`, `risk:high` or `risk:critical` label, assigned by the `pr-writer` agent when it opens the PR (see [Pull request flow](#pull-request-flow)). Some files set a minimum: `.github/risk-floors.yaml` lists, per category, the globs that put a PR at least at that level. It starts with three categories, all `high`:
+Every PR carries exactly one `risk:low`, `risk:medium`, `risk:high` or `risk:critical` label, assigned by the `pr-writer` agent when it opens the PR (see [Pull request flow](#pull-request-flow)). The level is a judgement about what the change can break, not a function of the files it touches: most PRs are `low` or `medium`, so `high` and `critical` stand out (rubric in `.claude/agents/pr-writer.md`). Before choosing `high` or `critical`, the agent reads the **Critical surfaces** section of `CLAUDE.md`, the list of places where a failure is hardest to undo. It ships as a placeholder with generic examples: a repository derived from this template must replace it with its own surfaces after reading its code.
 
-| Category | Paths |
-| --- | --- |
-| pipeline config | `pyproject.toml`, `.pre-commit-config.yaml`, `Makefile`, `suppressions-baseline.json`, `scripts/**`, `.github/**`, `.claude/**`, `CLAUDE.md`, `AGENTS.md` |
-| migrations | `**/migrations/**`, `**/alembic/**`, `alembic.ini` |
-| auth | `**/*auth*`, `**/*permission*` (files and directories) |
+The **Risk label** workflow (`.github/workflows/risk-label.yml`) runs `scripts/risk.py check` on every push and every label change and fails when the PR has no risk label, more than one, or an unknown one. It reads the labels from the API when it runs (not from the event that triggered it), and runs of the same PR queue instead of cancelling each other, so the final result applies to the current labels. It is a separate workflow so that changing a label does not re-run the whole CI, and for that reason it is not part of the Quality Report. The check does not require a specific reviewer's approval; merging stays with the owner.
 
-`make risk-floor` prints the floor of the current branch and the files behind it; the `pr-writer` agent runs the same command, so the agent and CI agree. The **Risk label** workflow (`.github/workflows/risk-label.yml`) runs `scripts/risk.py check` on every push and every label change and fails when the PR has no risk label, more than one, an unknown one, or one below the floor. It reads the labels from the API when it runs (not from the event that triggered it), and runs of the same PR queue instead of cancelling each other, so the final result applies to the current labels. It is a separate workflow so that changing a label does not re-run the whole CI, and for that reason it is not part of the Quality Report. The second floor rule (any deploy step other than "None" is at least `medium`) depends on the PR description, so only the agent applies it.
-
-The floor is what keeps a change to the pipeline from passing as a minor one: such a PR is always labeled at least `high` and its pipeline changes are listed under **Look here**. It does not require a specific reviewer's approval; merging stays with the owner.
-
-Create the labels once with `make risk-labels` (idempotent: `gh label create --force`). Dependabot PRs get `risk:high` through `labels` in `.github/dependabot.yaml`, since they touch `pyproject.toml` or the workflows. To add a category, append an entry with `category`, `level` and `paths` to the YAML file; the check picks it up on the next run.
+Create the labels once with `make risk-labels` (idempotent: `gh label create --force`). Dependabot PRs are born `risk:low` through `labels` in `.github/dependabot.yaml`; relabel a major bump by hand when it changes behavior.
 
 ## Quality Report
 
@@ -276,7 +267,7 @@ Reading AI-written diffs is the bottleneck, so the PR description tells the revi
 
 1. **`coder`** implements on a branch, runs every check, commits one logical step per commit, pushes and writes **handoff notes** to `.handoff/<branch>.md` (gitignored): the task verbatim, what was done and why, decisions, deploy notes and an explicit **Not verified** list. It does not open the PR or assess the risk.
 2. **`pr-writer`** (Opus) gets the task, the branch and the notes. It reads the diff commit by commit, writes behavior items per commit and aggregates them, and fills `.github/pull_request_template.md`:
-   - **Risk**: `low | medium | high | critical` with one line of why. It assigns the level itself, never below `make risk-floor` (pipeline config, migrations and auth are `high`), and at least `medium` when there are deploy steps;
+   - **Risk**: `low | medium | high | critical` with one line of why. It assigns the level itself by judgement, defaulting to `low` (no behavior change: docs, tests, CI, dependency patch or minor bumps, refactors covered by tests) or `medium` (new behavior, a new endpoint or option, or any deploy step). `high` is for changes that can break production or change existing behavior drastically but are recoverable by revert; `critical` for failures that take down what users or money depend on, leak data or cut the only way to recover. High and critical need one concrete sentence naming what can break, otherwise the level is lowered; touching pipeline files is not by itself a reason for `high`;
    - **Summary**: one sentence on what changes in behavior and why;
    - **Behavior**: at most five *before → after* items about rules and observable behavior, in plain words for someone who has not read the code: no file, function, test or code references;
    - **Unchanged**;
@@ -284,7 +275,7 @@ Reading AI-written diffs is the bottleneck, so the PR description tells the revi
    - **Deploy steps** (always present; "None: normal merge and deploy." when nothing is needed) and an honest **Not verified**, plus a **Mismatch** line when the diff contradicts the handoff notes.
 
    It opens the PR with the `risk:<level>` label (creating the labels if missing) and stops.
-3. **Fallback**: if `pr-writer` fails, `coder` opens the PR with a minimal body (summary plus the template headings, risk "unassessed", no label), so a failure never blocks delivery; the [Risk label](#risk-floors-and-the-risk-label) check stays red until a person sets the label.
+3. **Fallback**: if `pr-writer` fails, `coder` opens the PR with a minimal body (summary plus the template headings, risk "unassessed", no label), so a failure never blocks delivery; the [Risk label](#risk-label) check stays red until a person sets the label.
 4. **Merge**: only the owner merges. The Quality Report comment and the Risk label check run on every PR.
 
 People opening PRs by hand get the same template from GitHub.
@@ -309,9 +300,8 @@ People opening PRs by hand get the same template from GitHub.
 | `scripts/quality_report.py`  | Runs analyses as CI fragments and renders the single Quality Report.    |
 | `scripts/suppressions.py`    | Suppression ratchet (`make suppressions`).                              |
 | `suppressions-baseline.json` | Committed suppression counts per file and kind.                         |
-| `.github/risk-floors.yaml`   | Minimum risk level per file category, read by `scripts/risk.py` and the `pr-writer` agent. |
-| `scripts/risk.py`            | Risk floor of a diff and the risk label check (`make risk-floor`).      |
-| `.github/workflows/risk-label.yml` | Fails PRs without a single risk label at or above the floor.      |
+| `scripts/risk.py`            | Risk label check: exactly one known `risk:<level>` label.               |
+| `.github/workflows/risk-label.yml` | Fails PRs without exactly one known risk label.                   |
 | `.env.example`               | Environment variables template.                                         |
 | `.github/workflows/ci.yml`   | CI pipeline: one job per analysis plus the `quality-report` job.        |
 | `.github/dependabot.yaml`    | Dependency updates.                                                     |
