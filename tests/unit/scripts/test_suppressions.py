@@ -6,19 +6,13 @@ import pytest
 
 from scripts import suppressions
 from scripts.suppressions import Change, Comparison, Kind, Occurrence, scan_source
+from tests.fakes.files import write
 
 HANDLER = "app/handler.py"
 
 
 def kinds_in(source: str) -> list[Kind]:
     return [occurrence.kind for occurrence in scan_source("x.py", source)]
-
-
-def write(root: Path, relative: str, source: str) -> Path:
-    path = root / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(source)
-    return path
 
 
 class TestCommentSuppressions:
@@ -123,6 +117,50 @@ class TestScan:
             suppressions.scan([tmp_path / "missing"])
 
 
+class TestRuffFileIgnores:
+    def test_should_count_each_code_ignored_for_a_pattern(self, tmp_path: Path) -> None:
+        pyproject = write(
+            tmp_path,
+            "pyproject.toml",
+            '[tool.ruff.lint]\nselect = ["E"]\n\n[tool.ruff.lint.per-file-ignores]\n'
+            '"scripts/**.py" = ["T20"]\n"app/x.py" = ["BLE001", "PLR0913"]\n',
+        )
+
+        occurrences = suppressions.scan_pyproject(pyproject)
+
+        assert occurrences == (
+            Occurrence("scripts/**.py", 5, Kind.RUFF_FILE_IGNORE),
+            Occurrence("app/x.py", 6, Kind.RUFF_FILE_IGNORE),
+            Occurrence("app/x.py", 6, Kind.RUFF_FILE_IGNORE),
+        )
+
+    @pytest.mark.parametrize(
+        "config",
+        [
+            '[tool.ruff.lint.extend-per-file-ignores]\n"app/x.py" = ["E501"]\n',
+            '[tool.ruff.per-file-ignores]\n"app/x.py" = ["E501"]\n',
+            "[tool.ruff]\nextend-per-file-ignores = { 'app/x.py' = ['E501'] }\n",
+        ],
+    )
+    def test_should_count_the_other_tables_ruff_reads(self, tmp_path: Path, config: str) -> None:
+        pyproject = write(tmp_path, "pyproject.toml", config)
+
+        occurrences = suppressions.scan_pyproject(pyproject)
+
+        assert [(item.path, item.kind) for item in occurrences] == [
+            ("app/x.py", Kind.RUFF_FILE_IGNORE)
+        ]
+
+    def test_should_find_nothing_without_ruff_configuration(self, tmp_path: Path) -> None:
+        pyproject = write(tmp_path, "pyproject.toml", '[project]\nname = "x"\n')
+
+        assert suppressions.scan_pyproject(pyproject) == ()
+
+    def test_should_fail_when_the_pyproject_does_not_exist(self, tmp_path: Path) -> None:
+        with pytest.raises(FileNotFoundError):
+            suppressions.scan_pyproject(tmp_path / "pyproject.toml")
+
+
 class TestComparison:
     @pytest.fixture
     def sut(self) -> Comparison:
@@ -202,16 +240,29 @@ class TestBaseline:
 
 class TestCommands:
     @pytest.fixture
-    def root(self, tmp_path: Path) -> Path:
+    def pyproject(self, tmp_path: Path) -> Path:
+        return write(tmp_path, "pyproject.toml", '[tool.ruff.lint]\nselect = ["E"]\n')
+
+    @pytest.fixture
+    def root(self, tmp_path: Path, pyproject: Path) -> Path:
         write(tmp_path, "app/a.py", "a = 1  # noqa\nb = 2  # noqa\n")
-        return tmp_path / "app"
+        return pyproject.parent / "app"
 
     @pytest.fixture
     def baseline(self, tmp_path: Path) -> Path:
         return tmp_path / "baseline.json"
 
     def run(self, baseline: Path, root: Path, *command: str) -> int:
-        return suppressions.main(["--baseline", str(baseline), "--root", str(root), *command])
+        pyproject = root.parent / "pyproject.toml"
+        arguments = [
+            "--baseline",
+            str(baseline),
+            "--root",
+            str(root),
+            "--pyproject",
+            str(pyproject),
+        ]
+        return suppressions.main([*arguments, *command])
 
     def lock(self, baseline: Path, root: Path, count: int) -> None:
         file = (root / "a.py").as_posix()
@@ -234,6 +285,31 @@ class TestCommands:
         output = capsys.readouterr().out
         assert "New suppressions" in output
         assert "noqa 1 -> 2 (lines: 1, 2)" in output
+
+    def test_should_fail_when_a_ruff_rule_is_ignored_for_a_file(
+        self, baseline: Path, root: Path, pyproject: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        self.lock(baseline, root, 2)
+        pyproject.write_text('[tool.ruff.lint.per-file-ignores]\n"app/**.py" = ["PGH004"]\n')
+
+        assert self.run(baseline, root, "check") == 1
+        assert "app/**.py: ruff-per-file-ignore 0 -> 1 (lines: 2)" in capsys.readouterr().out
+
+    @pytest.mark.parametrize("config", ["ruff.toml", ".ruff.toml", "app/sub/ruff.toml"])
+    def test_should_fail_when_ruff_reads_a_configuration_outside_the_pyproject(
+        self, baseline: Path, root: Path, capsys: pytest.CaptureFixture[str], config: str
+    ) -> None:
+        self.lock(baseline, root, 2)
+        locked = baseline.read_text()
+        write(root.parent, config, '[lint.per-file-ignores]\n"a.py" = ["PGH004"]\n')
+
+        assert self.run(baseline, root, "check") == 1
+        assert self.run(baseline, root, "update", "--allow-increase") == 1
+        output = capsys.readouterr().out
+        assert "Ruff configuration outside pyproject.toml" in output
+        assert f"  {(root.parent / config).as_posix()}" in output
+        assert suppressions.RESULT_PREFIX not in output
+        assert baseline.read_text() == locked
 
     def test_should_fail_when_the_baseline_is_stale(
         self, baseline: Path, root: Path, capsys: pytest.CaptureFixture[str]

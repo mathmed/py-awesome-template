@@ -5,6 +5,7 @@ import json
 import re
 import sys
 import tokenize
+import tomllib
 from collections import Counter
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
@@ -12,8 +13,13 @@ from enum import StrEnum
 from pathlib import Path
 
 DEFAULT_BASELINE = Path("suppressions-baseline.json")
+DEFAULT_PYPROJECT = Path("pyproject.toml")
 DEFAULT_ROOTS = (Path("app"), Path("scripts"), Path("tests"))
 RESULT_PREFIX = "SUPPRESSIONS_RESULT: "
+RUFF_IGNORE_TABLES = ("per-file-ignores", "extend-per-file-ignores")
+# Constraint: ruff reads a ruff.toml or .ruff.toml before the pyproject.toml of its directory, and
+# one in a subdirectory applies to the files under it, so the ignores there would escape the count.
+RUFF_CONFIG_FILES = ("ruff.toml", ".ruff.toml")
 
 
 class Kind(StrEnum):
@@ -27,6 +33,7 @@ class Kind(StrEnum):
     FORMATTER = "formatter-off"
     TEST_SKIP = "test-skip"
     TEST_XFAIL = "test-xfail"
+    RUFF_FILE_IGNORE = "ruff-per-file-ignore"
 
 
 COMMENT_PATTERNS: tuple[tuple[Kind, re.Pattern[str]], ...] = (
@@ -213,6 +220,34 @@ def scan(roots: Iterable[Path]) -> tuple[Occurrence, ...]:
     return tuple(occurrences)
 
 
+def scan_pyproject(path: Path) -> tuple[Occurrence, ...]:
+    text = path.read_text(encoding="utf-8")
+    ruff = tomllib.loads(text).get("tool", {}).get("ruff", {})
+    occurrences: list[Occurrence] = []
+    for section in (ruff, ruff.get("lint", {})):
+        for table in RUFF_IGNORE_TABLES:
+            for pattern, codes in section.get(table, {}).items():
+                line = key_line(text, pattern)
+                occurrences += [Occurrence(pattern, line, Kind.RUFF_FILE_IGNORE) for _ in codes]
+    return tuple(occurrences)
+
+
+def key_line(text: str, key: str) -> int:
+    quoted = (f'"{key}"', f"'{key}'")
+    lines = enumerate(text.splitlines(), start=1)
+    return next((number for number, line in lines if line.lstrip().startswith(quoted)), 0)
+
+
+def ruff_config_files(roots: Iterable[Path], pyproject: Path) -> list[Path]:
+    top = [pyproject.parent / name for name in RUFF_CONFIG_FILES]
+    nested = [file for root in roots for name in RUFF_CONFIG_FILES for file in root.rglob(name)]
+    return sorted({file for file in (*top, *nested) if file.exists()})
+
+
+def scan_repository(roots: list[Path], pyproject: Path) -> tuple[Occurrence, ...]:
+    return (*scan(roots), *scan_pyproject(pyproject))
+
+
 def load_baseline(path: Path) -> Counter[tuple[str, Kind]]:
     if not path.exists():
         return Counter()
@@ -250,8 +285,21 @@ def print_report(comparison: Comparison) -> None:
         print(*(describe(change) for change in comparison.decreases), sep="\n")
 
 
-def check_command(baseline_path: Path, roots: list[Path]) -> int:
-    comparison = Comparison(scan(roots), load_baseline(baseline_path))
+def has_ruff_config_files(roots: list[Path], pyproject: Path) -> bool:
+    found = ruff_config_files(roots, pyproject)
+    if not found:
+        return False
+    print(
+        "Ruff configuration outside pyproject.toml (move it there, where the ignores are counted):"
+    )
+    print(*(f"  {file.as_posix()}" for file in found), sep="\n")
+    return True
+
+
+def check_command(baseline_path: Path, roots: list[Path], pyproject: Path) -> int:
+    if has_ruff_config_files(roots, pyproject):
+        return 1
+    comparison = Comparison(scan_repository(roots, pyproject), load_baseline(baseline_path))
     print_report(comparison)
     print(comparison.to_result_line())
     if comparison.changes:
@@ -260,8 +308,12 @@ def check_command(baseline_path: Path, roots: list[Path]) -> int:
     return 0
 
 
-def update_command(baseline_path: Path, roots: list[Path], *, can_increase: bool) -> int:
-    comparison = Comparison(scan(roots), load_baseline(baseline_path))
+def update_command(
+    baseline_path: Path, roots: list[Path], pyproject: Path, *, can_increase: bool
+) -> int:
+    if has_ruff_config_files(roots, pyproject):
+        return 1
+    comparison = Comparison(scan_repository(roots, pyproject), load_baseline(baseline_path))
     print_report(comparison)
     if comparison.increases and not can_increase:
         print(
@@ -277,6 +329,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--baseline", type=Path, default=DEFAULT_BASELINE)
     parser.add_argument("--root", type=Path, action="append", dest="roots")
+    parser.add_argument("--pyproject", type=Path, default=DEFAULT_PYPROJECT)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("check", help="fail when the suppressions differ from the baseline")
     update = commands.add_parser("update", help="rewrite the baseline with the current counts")
@@ -288,8 +341,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     roots = args.roots or list(DEFAULT_ROOTS)
     if args.command == "check":
-        return check_command(args.baseline, roots)
-    return update_command(args.baseline, roots, can_increase=args.allow_increase)
+        return check_command(args.baseline, roots, args.pyproject)
+    return update_command(args.baseline, roots, args.pyproject, can_increase=args.allow_increase)
 
 
 if __name__ == "__main__":

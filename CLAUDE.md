@@ -23,7 +23,7 @@ make risk-labels  # create/update the risk:<level> labels on GitHub
 make lint-imports # architecture contracts (import-linter)
 make mutation     # mutation testing of the whole domain (slow; weekly in CI)
 make mutation-changed # mutation testing of only the domain files changed vs BASE (default origin/main); runs on every PR
-make suppressions # suppression ratchet: fails when noqa/type: ignore/nosec/skip... differ from the baseline
+make suppressions # suppression ratchet: fails when noqa/type: ignore/nosec/skip/ruff per-file-ignores... differ from the baseline
 make suppressions-update # lower suppressions-baseline.json after removing suppressions (never raises it)
 make format-code  # fix lint issues and format with ruff
 ```
@@ -38,6 +38,7 @@ app/domain/        business core: contracts, entities, usecases, services, error
 app/infra/         implementations of domain contracts (database, HTTP clients, mail...)
 app/presentation/  factories (dependency wiring) and FastAPI (routes, middlewares, handlers)
 app/main/          entry point
+tests/fakes/       helpers shared by the test suites (fakes, builders)
 tests/unit/        fast tests with mocked dependencies, mirroring app/
 tests/integration/ HTTP tests with TestClient
 ```
@@ -76,11 +77,14 @@ tests/integration/ HTTP tests with TestClient
 - `make smoke` boots the API for real and calls `/health` (liveness, touches no dependency) and `/ready`
   (readiness, touches the real dependencies). A new infra dependency needs a `ReadinessCheckContract`
   implementation registered in `check_readiness_factory`.
-- `make suppressions` compares every `# noqa`, `# type: ignore`, `# nosec`, `# pragma: no cover`, tool
-  directive (`# pylint:`, `# mypy:`, `# pyright:`, `# fmt: off`) and skipped/xfail test in `app/`, `scripts/`
-  and `tests/` with `suppressions-baseline.json`. Fix the cause instead of suppressing it. Never raise the
-  baseline (`update --allow-increase`) without the user's explicit approval. When you remove suppressions,
-  run `make suppressions-update` and commit the lower baseline in the same PR.
+- `make suppressions` is a ratchet whose goal is zero: it compares every `# noqa`, `# type: ignore`,
+  `# nosec`, `# pragma: no cover`, tool directive (`# pylint:`, `# mypy:`, `# pyright:`, `# fmt: off`),
+  skipped/xfail test in `app/`, `scripts/` and `tests/` and every code under
+  `[tool.ruff.lint.per-file-ignores]` with `suppressions-baseline.json`, and fails when a `ruff.toml` or
+  `.ruff.toml` exists, which ruff would read instead of `pyproject.toml`. Fix the cause instead of
+  suppressing it. Never raise the baseline (`update --allow-increase`) without the user's explicit
+  approval. When you remove suppressions, run `make suppressions-update` and commit the lower baseline in
+  the same PR.
 - Pipeline and agent files (`pyproject.toml`, `.pre-commit-config.yaml`, `Makefile`, `scripts/`, `.github/`,
   `.claude/`, `CLAUDE.md`, `suppressions-baseline.json`): do not change them unless the task asks for it,
   and call the change out in the PR.

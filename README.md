@@ -53,7 +53,7 @@ curl "http://localhost:8000/example?field1=hello"
 | `make risk-labels` | Create or update the `risk:<level>` labels on GitHub (needs `gh`).      |
 | `make lint-imports` | Check the architecture contracts (import-linter).                      |
 | `make mutation`    | Mutation testing of the domain (slow); `make mutation-results` lists survivors. |
-| `make suppressions` | Fail when the suppressions differ from `suppressions-baseline.json`.   |
+| `make suppressions` | Fail when the suppressions (`noqa`, `type: ignore`, `nosec`, skips, ruff `per-file-ignores`...) differ from `suppressions-baseline.json`. |
 | `make suppressions-update` | Lower the suppression baseline after removing suppressions.     |
 | `make check-code`  | Lint and check formatting with ruff.                                    |
 | `make format-code` | Fix lint issues and format the code with ruff.                          |
@@ -154,7 +154,7 @@ Score per module = killed ÷ total mutants. For each survivor, either add the mi
 
 ### Suppression ratchet (`make suppressions`)
 
-`scripts/suppressions.py` counts, per file and per kind, every suppression in `app/`, `scripts/` and `tests/`:
+`scripts/suppressions.py` counts, per file and per kind, every suppression in `app/`, `scripts/` and `tests/`, plus the per-file ignores of ruff in `pyproject.toml`:
 
 | Kind | Matches |
 | --- | --- |
@@ -165,14 +165,17 @@ Score per module = killed ÷ total mutants. For each survivor, either add the mi
 | `pylint-disable` / `mypy-directive` / `pyright-directive` | `# pylint: disable=...`, `# mypy: ...`, `# pyright: ...` |
 | `formatter-off` | `# fmt: off`, `# fmt: skip`, `# isort: skip_file`... |
 | `test-skip` / `test-xfail` | `pytest.mark.skip`/`skipif`/`xfail`, `pytest.skip()`/`importorskip()`/`xfail()`, `unittest.skip*`/`expectedFailure`, `self.skipTest()` |
+| `ruff-per-file-ignore` | each code under `[tool.ruff.lint.per-file-ignores]`, `[tool.ruff.lint.extend-per-file-ignores]` or their `[tool.ruff]` forms, counted under the file pattern instead of a path |
 
-Comments are read with `tokenize` and tests with `ast`, so the same text inside a string does not count. The counts are compared with the committed `suppressions-baseline.json`:
+Comments are read with `tokenize`, tests with `ast` and `pyproject.toml` with `tomllib`, so the same text inside a string does not count. The counts are compared with the committed `suppressions-baseline.json`:
 
 - **a count went up** (a new suppression, or one moved to another file): the check fails and lists the file, kind and lines. Remove the suppression and fix the cause. Raising the baseline (`uv run python scripts/suppressions.py update --allow-increase`) needs the owner's explicit approval, and the baseline change shows up in the PR diff;
 - **a count went down**: the check also fails until you run `make suppressions-update` and commit the lower baseline in the same PR, so the improvement is locked in and reviewed;
 - **counts match**: the check passes.
 
-It runs as a pre-commit hook, in `make hooks` and as the `suppressions` CI job. Configuration that disables checks globally (`pyproject.toml`, `.pre-commit-config.yaml`, the workflows) is not counted here: the `pr-writer` agent always lists pipeline changes under **Look here**, so a reviewer sees when a gate changes.
+The goal is zero: no new suppression, and the baseline is there for the owner to approve an exception when there is no other way. A rule ignored per file in `pyproject.toml` counts too, so the configuration does not become a back door; a `ruff.toml` or `.ruff.toml` at the root or inside a counted folder fails both the check and the update, because ruff would read it instead of `pyproject.toml` and its ignores would escape the count.
+
+It runs as a pre-commit hook, in `make hooks` and as the `suppressions` CI job. Configuration that disables checks globally (the ruff `select`/`ignore`, `.pre-commit-config.yaml`, the workflows) is not counted here: the `pr-writer` agent always lists pipeline changes under **Look here**, so a reviewer sees when a gate changes.
 
 ### Risk label
 
@@ -235,6 +238,7 @@ app/
 │   └── fastapi/            # App config, routes, middlewares and error handlers
 └── main/                   # Entry point: loads settings and logging and creates the app
 tests/
+├── fakes/                  # Helpers shared by the test suites (fakes, builders, file writers)
 ├── unit/                   # Fast tests with mocked dependencies, mirroring app/
 └── integration/            # HTTP tests with TestClient
 ```
