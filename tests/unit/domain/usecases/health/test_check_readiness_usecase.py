@@ -13,10 +13,10 @@ from app.domain.usecases.health.check_readiness_usecase import (
 )
 
 
-def make_check(name: str, ready: bool) -> MagicMock:
+def make_check(name: str, *, is_ready: bool) -> MagicMock:
     check: MagicMock = create_autospec(ReadinessCheckContract, instance=True)
     check.name = name
-    check.is_ready.return_value = ready
+    check.is_ready.return_value = is_ready
     return check
 
 
@@ -27,7 +27,10 @@ def test_should_be_ready_when_there_are_no_dependencies() -> None:
 
 
 def test_should_report_every_dependency_when_all_are_ready(faker: Faker) -> None:
-    first, second = make_check(faker.word(), True), make_check(faker.word() + "2", True)
+    first, second = (
+        make_check(faker.word(), is_ready=True),
+        make_check(faker.word() + "2", is_ready=True),
+    )
     response = CheckReadinessUsecase(checks=[first, second]).execute(CheckReadinessParams())
     assert response.status == ReadinessStatus.READY
     assert response.dependencies == [
@@ -41,9 +44,9 @@ def test_should_report_every_dependency_when_all_are_ready(faker: Faker) -> None
 def test_should_raise_naming_only_the_failed_dependencies() -> None:
     sut = CheckReadinessUsecase(
         checks=[
-            make_check("database", False),
-            make_check("cache", True),
-            make_check("broker", False),
+            make_check("database", is_ready=False),
+            make_check("cache", is_ready=True),
+            make_check("broker", is_ready=False),
         ]
     )
     with raises(ServiceUnavailableError) as error:

@@ -9,10 +9,10 @@ from app.domain.usecases.health.check_readiness_usecase import CheckReadinessUse
 from app.main.main import app
 
 
-def make_check(name: str, ready: bool) -> MagicMock:
+def make_check(name: str, *, is_ready: bool) -> MagicMock:
     check: MagicMock = create_autospec(ReadinessCheckContract, instance=True)
     check.name = name
-    check.is_ready.return_value = ready
+    check.is_ready.return_value = is_ready
     return check
 
 
@@ -23,7 +23,7 @@ def test_should_return_ready_without_dependencies() -> None:
 
 
 def test_should_return_ready_when_dependencies_are_ready(monkeypatch: MonkeyPatch) -> None:
-    usecase = CheckReadinessUsecase(checks=[make_check("database", True)])
+    usecase = CheckReadinessUsecase(checks=[make_check("database", is_ready=True)])
     monkeypatch.setattr(ready_routes, "check_readiness_factory", lambda: usecase)
     response = TestClient(app).get("/ready")
     assert response.status_code == 200
@@ -34,7 +34,7 @@ def test_should_return_ready_when_dependencies_are_ready(monkeypatch: MonkeyPatc
 
 
 def test_should_return_503_when_a_dependency_is_not_ready(monkeypatch: MonkeyPatch) -> None:
-    usecase = CheckReadinessUsecase(checks=[make_check("database", False)])
+    usecase = CheckReadinessUsecase(checks=[make_check("database", is_ready=False)])
     monkeypatch.setattr(ready_routes, "check_readiness_factory", lambda: usecase)
     response = TestClient(app).get("/ready")
     assert response.status_code == 503

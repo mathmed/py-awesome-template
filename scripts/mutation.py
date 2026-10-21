@@ -53,7 +53,7 @@ class MutationScope:
     source_paths: list[str]
     do_not_mutate: list[str]
 
-    def contains(self, file: str) -> bool:
+    def should_mutate(self, file: str) -> bool:
         if not file.endswith(".py") or file.endswith("__init__.py"):
             return False
         if not any(file.startswith(path.rstrip("/") + "/") for path in self.source_paths):
@@ -83,7 +83,7 @@ class MutationReport:
         return 100.0 if self.total == 0 else self.killed / self.total * 100
 
     @property
-    def passed(self) -> bool:
+    def has_passed(self) -> bool:
         return self.score >= self.min_score
 
     def to_result_line(self) -> str:
@@ -107,7 +107,7 @@ class MutationReport:
         )
 
     def to_markdown(self) -> str:
-        verdict = "✅ passed" if self.passed else "❌ failed"
+        verdict = "✅ passed" if self.has_passed else "❌ failed"
         lines = [
             "## Mutation testing",
             "",
@@ -153,7 +153,7 @@ def changed_files(base_ref: str) -> list[str]:
 
 def targets_for(files: list[str], scope: MutationScope) -> list[str]:
     modules = sorted(
-        {file.removesuffix(".py").replace("/", ".") for file in files if scope.contains(file)}
+        {file.removesuffix(".py").replace("/", ".") for file in files if scope.should_mutate(file)}
     )
     return [f"{module}.*" for module in modules]
 
@@ -210,7 +210,7 @@ def report_command(targets: list[str]) -> int:
     report = MutationReport(read_results(targets), min_score())
     publish(report.to_markdown())
     print(report.to_result_line())
-    return 0 if report.passed else 1
+    return 0 if report.has_passed else 1
 
 
 def changed_command(base_ref: str) -> int:

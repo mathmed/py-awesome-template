@@ -6,7 +6,7 @@ from app.common.logger import JsonFormatter, configure_logging
 from app.common.settings import Environment, Settings
 
 
-def make_record(exc_info: bool = False) -> logging.LogRecord:
+def make_record(*, has_exception: bool = False) -> logging.LogRecord:
     try:
         raise ValueError("boom")
     except ValueError:
@@ -17,7 +17,7 @@ def make_record(exc_info: bool = False) -> logging.LogRecord:
             1,
             "hello %s",
             ("world",),
-            exc_info=sys.exc_info() if exc_info else None,
+            exc_info=sys.exc_info() if has_exception else None,
         )
 
 
@@ -30,7 +30,7 @@ def test_should_serialize_record_as_json() -> None:
 
 
 def test_should_include_exception_in_json() -> None:
-    payload = json.loads(JsonFormatter().format(make_record(exc_info=True)))
+    payload = json.loads(JsonFormatter().format(make_record(has_exception=True)))
     assert "ValueError: boom" in payload["exception"]
 
 

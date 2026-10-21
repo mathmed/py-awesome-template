@@ -57,10 +57,10 @@ class Fragment:
     analysis: Analysis
     exit_code: int
     output: str
-    advisory: bool = False
+    is_advisory: bool = False
 
     @property
-    def passed(self) -> bool:
+    def has_passed(self) -> bool:
         return self.exit_code == 0
 
     def write(self, directory: Path) -> Path:
@@ -70,7 +70,7 @@ class Fragment:
             "analysis": self.analysis.value,
             "exit_code": self.exit_code,
             "output": self.output,
-            "advisory": self.advisory,
+            "advisory": self.is_advisory,
         }
         path.write_text(json.dumps(payload))
         return path
@@ -82,7 +82,7 @@ class Fragment:
             analysis=Analysis(data["analysis"]),
             exit_code=int(data["exit_code"]),
             output=str(data["output"]),
-            advisory=bool(data.get("advisory", False)),
+            is_advisory=bool(data.get("advisory", False)),
         )
 
 
@@ -145,7 +145,7 @@ def plural(count: int, singular: str, plural_form: str) -> str:
 
 def analyze_ruff_check(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
-    if fragment.passed:
+    if fragment.has_passed:
         return Finding(Status.OK, "No lint issues")
     count = first_int(r"Found (\d+) error", output)
     summary = f"{plural(count, 'lint issue', 'lint issues')}" if count else "Lint failed"
@@ -154,7 +154,7 @@ def analyze_ruff_check(fragment: Fragment) -> Finding:
 
 def analyze_ruff_format(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
-    if fragment.passed:
+    if fragment.has_passed:
         return Finding(Status.OK, "Formatting is correct")
     count = len(re.findall(r"^Would reformat: ", output, re.MULTILINE))
     summary = (
@@ -167,7 +167,7 @@ def analyze_ruff_format(fragment: Fragment) -> Finding:
 
 def analyze_mypy(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
-    if fragment.passed:
+    if fragment.has_passed:
         files = first_int(r"no issues found in (\d+) source file", output)
         return Finding(Status.OK, f"No type errors ({plural(files, 'file', 'files')})")
     errors = first_int(r"Found (\d+) error", output)
@@ -177,7 +177,7 @@ def analyze_mypy(fragment: Fragment) -> Finding:
 
 def analyze_bandit(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
-    if fragment.passed:
+    if fragment.has_passed:
         return Finding(Status.OK, "No security issues")
     issues = len(re.findall(r">> Issue:", output))
     summary = plural(issues, "issue", "issues") if issues else "bandit failed"
@@ -186,7 +186,7 @@ def analyze_bandit(fragment: Fragment) -> Finding:
 
 def analyze_pip_audit(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
-    if fragment.passed:
+    if fragment.has_passed:
         return Finding(Status.OK, "No known vulnerabilities")
     count = first_int(r"Found (\d+) known vulnerabilit", output)
     summary = (
@@ -197,10 +197,10 @@ def analyze_pip_audit(fragment: Fragment) -> Finding:
 
 def analyze_vulture(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
-    if fragment.passed and not output:
+    if fragment.has_passed and not output:
         return Finding(Status.OK, "No dead code detected")
     lines = [line for line in output.splitlines() if line.strip()]
-    status = Status.WARNING if fragment.advisory else Status.FAILED
+    status = Status.WARNING if fragment.is_advisory else Status.FAILED
     return Finding(
         status, f"{plural(len(lines), 'dead code item', 'dead code items')}", tail(output)
     )
@@ -208,7 +208,7 @@ def analyze_vulture(fragment: Fragment) -> Finding:
 
 def analyze_xenon(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
-    if fragment.passed:
+    if fragment.has_passed:
         return Finding(Status.OK, "Complexity within the threshold")
     blocks = len(re.findall(r"^ERROR:xenon:", output, re.MULTILINE))
     summary = (
@@ -252,7 +252,7 @@ def analyze_pytest(fragment: Fragment) -> Finding:
     if failed or not summary_line:
         summary = counts if summary_line else "pytest failed before finishing"
         return Finding(Status.FAILED, f"{summary} · coverage {coverage_text}", tail(output))
-    if not fragment.passed:
+    if not fragment.has_passed:
         summary = f"{counts} · coverage below the minimum: {coverage_text}"
         return Finding(Status.FAILED, summary, coverage_table(output) or tail(output), "Coverage")
     return Finding(
@@ -268,7 +268,7 @@ def analyze_import_linter(fragment: Fragment) -> Finding:
     contracts = [(m["name"].strip(), m["state"]) for m in CONTRACT_LINE.finditer(output)]
     kept = first_int(r"(\d+) kept", output)
     broken = first_int(r"(\d+) broken", output)
-    if fragment.passed:
+    if fragment.has_passed:
         listing = "\n".join(f"{state:6} {name}" for name, state in contracts)
         return Finding(
             Status.OK,
@@ -289,16 +289,16 @@ def analyze_import_linter(fragment: Fragment) -> Finding:
 
 def analyze_smoke(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
-    health = ">> GET /health ->" in output
-    ready = ">> GET /ready ->" in output
+    has_health = ">> GET /health ->" in output
+    has_ready = ">> GET /ready ->" in output
     seconds = re.search(r">> API healthy after ([\d.]+)s", output)
-    endpoints = f"/health {'✅' if health else '❌'} · /ready {'✅' if ready else '❌'}"
-    if fragment.passed:
+    endpoints = f"/health {'✅' if has_health else '❌'} · /ready {'✅' if has_ready else '❌'}"
+    if fragment.has_passed:
         boot = f"started and became healthy in {seconds[1]}s" if seconds else "started"
         return Finding(Status.OK, f"API {boot} · {endpoints}")
     reason = re.findall(r"^>> smoke: (.+)$", output, re.MULTILINE)
-    started = ">> starting the API" in output
-    boot = "started but failed" if started else "did not start"
+    has_started = ">> starting the API" in output
+    boot = "started but failed" if has_started else "did not start"
     cause = f": {reason[-1]}" if reason else ""
     logs = output.split(">> smoke FAILED. API logs:", 1)
     details = logs[1].strip() if len(logs) == 2 else output
@@ -349,7 +349,7 @@ def schemathesis_details(output: str) -> str:
 
 def analyze_schemathesis(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
-    if fragment.passed:
+    if fragment.has_passed:
         return Finding(Status.OK, f"No contract violations · {schemathesis_scope(output)}")
     verdicts = SCHEMATHESIS_VERDICT.findall(output)
     if not verdicts:
@@ -389,11 +389,11 @@ def oasdiff_listing(output: str) -> str:
 
 def analyze_oasdiff(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
-    if fragment.passed and "No changes detected" in output:
+    if fragment.has_passed and "No changes detected" in output:
         return Finding(Status.OK, "No API changes")
     counts = OASDIFF_COUNTS.search(output)
     errors = int(counts["errors"]) if counts else 0
-    if counts is None or (errors == 0 and not fragment.passed):
+    if counts is None or (errors == 0 and not fragment.has_passed):
         return Finding(Status.FAILED, "OpenAPI diff failed before comparing", tail(output))
     total, warnings = int(counts["total"]), int(counts["warnings"])
     listing = tail(oasdiff_listing(output))
@@ -420,7 +420,7 @@ class Survivor:
 
 @dataclass(frozen=True)
 class MutationOutcome:
-    skipped: bool
+    is_skipped: bool
     score: float
     min_score: float
     killed: int
@@ -436,7 +436,7 @@ class MutationOutcome:
             return None
         data = json.loads(line.removeprefix(MUTATION_RESULT_PREFIX))
         return cls(
-            skipped=bool(data["skipped"]),
+            is_skipped=bool(data["skipped"]),
             score=float(data["score"]),
             min_score=float(data["min_score"]),
             killed=int(data["killed"]),
@@ -465,7 +465,7 @@ def analyze_mutation(fragment: Fragment) -> Finding:
     outcome = MutationOutcome.parse(output)
     if outcome is None:
         return Finding(Status.FAILED, "mutmut failed before producing a score", tail(output))
-    if outcome.skipped:
+    if outcome.is_skipped:
         return Finding(Status.SKIPPED, "No domain file changed, nothing to mutate")
     survivors = len(outcome.survivors)
     summary = (
@@ -616,9 +616,9 @@ def render_details(finding: Finding) -> list[str]:
 
 def render_section(result: SectionResult) -> list[str]:
     lines = ["", f"### {result.status} {result.title}", ""]
-    multiple = len(result.findings) > 1
+    has_many = len(result.findings) > 1
     for analysis, finding in result.findings:
-        label = f"- {finding.status} **{analysis}**: " if multiple else ""
+        label = f"- {finding.status} **{analysis}**: " if has_many else ""
         lines.append(f"{label}{finding.summary}")
         lines += render_details(finding)
     return lines
@@ -673,7 +673,9 @@ def parse_job_results(needs_json: str) -> dict[str, str]:
     return {job: str(data.get("result", "unknown")) for job, data in needs.items()}
 
 
-def run_command(analysis: Analysis, command: list[str], directory: Path, advisory: bool) -> int:
+def run_command(
+    analysis: Analysis, command: list[str], directory: Path, *, is_advisory: bool
+) -> int:
     lines: list[str] = []
     try:
         process = subprocess.Popen(
@@ -686,15 +688,15 @@ def run_command(analysis: Analysis, command: list[str], directory: Path, advisor
     except OSError as error:
         message = f"could not run {command[0]}: {error}"
         print(message, file=sys.stderr)
-        Fragment(analysis, 127, message, advisory).write(directory)
+        Fragment(analysis, 127, message, is_advisory).write(directory)
         return 127
     assert process.stdout is not None
     for line in process.stdout:
         sys.stdout.write(line)
         lines.append(line)
     exit_code = process.wait()
-    Fragment(analysis, exit_code, "".join(lines), advisory).write(directory)
-    return 0 if advisory else exit_code
+    Fragment(analysis, exit_code, "".join(lines), is_advisory).write(directory)
+    return 0 if is_advisory else exit_code
 
 
 def footer_from_environment() -> str:
@@ -733,7 +735,7 @@ def main() -> int:
         if not command:
             print("missing command after --", file=sys.stderr)
             return 2
-        return run_command(args.analysis, command, args.dir, args.advisory)
+        return run_command(args.analysis, command, args.dir, is_advisory=args.advisory)
     report = render(
         load_fragments(args.dir), parse_job_results(args.needs_json), footer_from_environment()
     )

@@ -144,7 +144,7 @@ info\t[endpoint-added] at head.openapi.json
 """
 
 
-def mutation_output(score: float, survivors: list[dict[str, str]], skipped: bool = False) -> str:
+def mutation_output(score: float, survivors: list[dict[str, str]], *, skipped: bool = False) -> str:
     payload = {
         "skipped": skipped,
         "score": score,
@@ -431,7 +431,9 @@ class TestSuppressions:
 
 class TestAdvisoryTools:
     def test_should_warn_on_dead_code_when_advisory(self) -> None:
-        advisory = Fragment(Analysis.VULTURE, 3, "app/a.py:1: unused function 'f'", advisory=True)
+        advisory = Fragment(
+            Analysis.VULTURE, 3, "app/a.py:1: unused function 'f'", is_advisory=True
+        )
 
         finding = analyze_vulture(advisory)
 
@@ -529,7 +531,7 @@ class TestRender:
 class TestRunCommand:
     def test_should_store_fragment_and_keep_exit_code(self, tmp_path: Path) -> None:
         code = quality_report.run_command(
-            Analysis.XENON, ["bash", "-c", "echo out; exit 3"], tmp_path, advisory=False
+            Analysis.XENON, ["bash", "-c", "echo out; exit 3"], tmp_path, is_advisory=False
         )
 
         stored = Fragment.read(tmp_path / "xenon.json")
@@ -541,14 +543,16 @@ class TestRunCommand:
         self, tmp_path: Path
     ) -> None:
         code = quality_report.run_command(
-            Analysis.VULTURE, ["bash", "-c", "exit 3"], tmp_path, advisory=True
+            Analysis.VULTURE, ["bash", "-c", "exit 3"], tmp_path, is_advisory=True
         )
 
         assert code == 0
         assert Fragment.read(tmp_path / "vulture.json").exit_code == 3
 
     def test_should_fail_with_127_when_command_does_not_exist(self, tmp_path: Path) -> None:
-        code = quality_report.run_command(Analysis.MYPY, ["no-such-binary-xyz"], tmp_path, False)
+        code = quality_report.run_command(
+            Analysis.MYPY, ["no-such-binary-xyz"], tmp_path, is_advisory=False
+        )
 
         assert code == 127
         assert Fragment.read(tmp_path / "mypy.json").exit_code == 127

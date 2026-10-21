@@ -39,9 +39,9 @@ class TestMutationScope:
         ],
     )
     def test_should_only_contain_mutable_domain_python_files(
-        self, scope: MutationScope, file: str, expected: bool
+        self, scope: MutationScope, file: str, *, expected: bool
     ) -> None:
-        assert scope.contains(file) is expected
+        assert scope.should_mutate(file) is expected
 
 
 class TestTargets:
@@ -88,7 +88,7 @@ class TestMutationReport:
         sut = MutationReport(results, min_score=90)
 
         assert sut.score == pytest.approx(100 / 3)
-        assert sut.passed is False
+        assert sut.has_passed is False
         markdown = sut.to_markdown()
         assert "`app/domain/errors/domain_errors.py` | `DomainError.__init__`" in markdown
         assert "❌ failed" in markdown
@@ -96,11 +96,11 @@ class TestMutationReport:
     def test_should_pass_when_every_mutant_is_killed(self) -> None:
         sut = MutationReport([MutantResult(CREATE, MutantStatus.KILLED)], min_score=90)
 
-        assert sut.passed is True
+        assert sut.has_passed is True
         assert "Survivors" not in sut.to_markdown()
 
     def test_should_pass_with_empty_scope(self) -> None:
-        assert MutationReport([], min_score=90).passed is True
+        assert MutationReport([], min_score=90).has_passed is True
 
 
 class TestCommands:
