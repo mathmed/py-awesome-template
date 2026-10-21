@@ -61,8 +61,20 @@ line-length = 100
 target-version = "py314"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+# ASYNC: blocking calls inside async code; DTZ: naive datetimes; T20: print outside scripts;
+# FBT: positional booleans; BLE001: blind except; TRY400: error log without the traceback;
+# PLR0913/PLR0915: too many arguments or statements. Too many public methods (PLR0904) is still a
+# preview rule, which would show every diagnostic by name and turn on preview fixes:
+# scripts/conventions.py counts it instead (public-methods).
+select = [
+    "E", "F", "I", "UP", "B", "SIM", "ASYNC", "DTZ", "T20", "RUF",
+    "FBT", "BLE001", "TRY400", "PLR0913", "PLR0915",
+]
 ignore = ["E501", "B008"]
+
+# Each code here counts as a suppression (scripts/suppressions.py).
+[tool.ruff.lint.per-file-ignores]
+"scripts/**.py" = ["T20"]
 
 [tool.vulture]
 min_confidence = 80

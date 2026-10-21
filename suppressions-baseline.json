@@ -1,1 +1,5 @@
-{}
+{
+  "scripts/**.py": {
+    "ruff-per-file-ignore": 1
+  }
+}

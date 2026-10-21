@@ -194,6 +194,8 @@ It runs as a pre-commit hook, in `make hooks` and as the `suppressions` CI job. 
 | `mutable-constant` | a module constant bound to a `list`, `dict` or `set` literal or comprehension | `app/` |
 | `test-name` | a test not named `test_should_...` (fixtures excluded) | `tests/` |
 
+Ruff enforces another part of the preferences, beyond style: blocking calls inside async code (`ASYNC`), naive datetimes (`DTZ`), `print` outside `scripts/` (`T20`), positional booleans (`FBT`), a blind `except` (`BLE001`), an error log without the traceback inside `except` (`TRY400`) and functions with too many arguments or statements (`PLR0913`, `PLR0915`). Its only per-file ignore, `print` in `scripts/`, is counted by the suppression ratchet.
+
 The mark says which of the three allowed cases justifies a comment: the check sees the mark, and the `reviewer` agent checks that it is honest. A test requires the scanned folders to be every folder with versioned Python, so a new top-level package cannot slip past the check. The limits and scopes are constants at the top of the script: changing a preference in `CLAUDE.md` means changing the check in the same PR. It runs as a pre-commit hook, in `make hooks` and as the `conventions` CI job.
 
 ### Risk label

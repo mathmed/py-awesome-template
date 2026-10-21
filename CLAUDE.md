@@ -24,7 +24,8 @@ make risk-labels  # create/update the risk:<level> labels on GitHub
 make lint-imports # architecture contracts (import-linter)
 make mutation     # mutation testing of the whole domain (slow; weekly in CI)
 make mutation-changed # mutation testing of only the domain files changed vs BASE (default origin/main); runs on every PR
-make suppressions # suppression ratchet: fails when noqa/type: ignore/nosec/skip/ruff per-file-ignores... differ from the baseline
+make suppressions # suppression ratchet: fails when noqa/type: ignore/nosec/skip/ruff per-file-ignores...
+                  # differ from the baseline
 make suppressions-update # lower suppressions-baseline.json after removing suppressions (never raises it)
 make conventions # the code preferences no linter checks: fails on any violation, with no baseline
 make format-code  # fix lint issues and format with ruff
@@ -211,21 +212,22 @@ preference, change the check too (`scripts/conventions.py` or `[tool.ruff.lint]`
   at the top of the module (`_UPPER` when private) or in `app/domain/constants/`. Constant collections are
   `tuple`/`frozenset` or an immutable `Mapping` (the check reads module constants).
 - **Money and exact values**: always `Decimal`, never `float`.
-- **Dates**: always timezone-aware UTC — `datetime.now(UTC)`. Never `datetime.now()` or `datetime.utcnow()`.
+- **Dates** (ruff): always timezone-aware UTC — `datetime.now(UTC)`. Never `datetime.now()` or
+  `datetime.utcnow()`.
 - **Edge cases**: before implementing, list the states, dates and input values that can reach the code and
   handle each one. Irreversible effects (charge, send, delete) happen exactly once.
 - **Idempotency**: repeating the same call (retry, webhook redelivery, double click) never duplicates an
   effect — use an idempotency key, an upsert or a state check.
-- **Fail loudly**: never swallow exceptions (no `except Exception: pass`). Catch specific exceptions only
-  where something can be done; log unexpected errors with `logger.exception` and propagate or translate
-  them. Only best-effort side effects may continue, after logging.
+- **Fail loudly** (ruff, partly): never swallow exceptions (no `except Exception: pass`). Catch specific
+  exceptions only where something can be done; log unexpected errors with `logger.exception` and propagate
+  or translate them. Only best-effort side effects may continue, after logging.
 - **Nothing internal leaks**: error messages are written for people — no exception text, vendor or
   infrastructure names or internal ids in responses.
 - **Hot paths**: no N+1 (query or call inside a loop) and no slow work on paths every request goes through.
-- **Functions** (conventions, partly): small (a function up to 50 lines, a class up to 250 lines and 20
-  public methods, a module up to 400 lines); a short orchestrator composes verb-named helpers. Booleans and
-  many optional parameters are keyword-only (`*`). Imports are absolute and at the top; local imports only
-  to break a cycle.
+- **Functions** (conventions and ruff, partly): small (a function up to 50 lines, a class up to 250 lines
+  and 20 public methods, a module up to 400 lines); a short orchestrator composes verb-named helpers.
+  Booleans and many optional parameters are keyword-only (`*`). Imports are absolute and at the top; local
+  imports only to break a cycle.
 - **Early return**: prefer guard clauses and early returns over nested `if`s.
 - **Thin routes**: a route only converts the request, calls the use case and returns the response. No
   business rules in `presentation`.
@@ -236,7 +238,8 @@ preference, change the check too (`scripts/conventions.py` or `[tool.ruff.lint]`
 - **Security**: never put tokens, passwords, secrets or personal data in logs, exception messages or the
   repository. Compare secrets with `hmac.compare_digest`, load YAML with `yaml.safe_load`, and call
   `subprocess` with an argument list, a `timeout` and no `shell=True`.
-- **Logging**: never use `print`; always `logger = logging.getLogger(__name__)`.
+- **Logging** (ruff, partly): never use `print` (outside `scripts/`, whose output is the product); always
+  `logger = logging.getLogger(__name__)`.
 - **Configuration**: read settings only from `app/common/settings.py`; never `os.getenv` elsewhere.
 - **Dependencies**: always use the latest available version of any external library.
 - **README**: after any relevant change (new route, command, setup step, env var or architecture change),
