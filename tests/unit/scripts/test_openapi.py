@@ -11,6 +11,7 @@ from scripts import openapi
 from scripts.openapi import OpenApiDiffError
 
 REPOSITORY = Path("/repo")
+RUN_TIMEOUT_SECONDS = 10
 COMMIT = "0123456789abcdef"
 
 
@@ -39,11 +40,18 @@ class TestExport:
 
 class TestRun:
     def test_should_return_the_output_of_a_successful_command(self, tmp_path: Path) -> None:
-        assert openapi.run(["bash", "-c", "echo out"], cwd=tmp_path, timeout=10) == "out\n"
+        assert (
+            openapi.run(["bash", "-c", "echo out"], cwd=tmp_path, timeout=RUN_TIMEOUT_SECONDS)
+            == "out\n"
+        )
 
     def test_should_raise_with_the_output_when_the_command_fails(self, tmp_path: Path) -> None:
         with pytest.raises(OpenApiDiffError, match="failed:\nout\nerr"):
-            openapi.run(["bash", "-c", "echo out; echo err >&2; exit 3"], cwd=tmp_path, timeout=10)
+            openapi.run(
+                ["bash", "-c", "echo out; echo err >&2; exit 3"],
+                cwd=tmp_path,
+                timeout=RUN_TIMEOUT_SECONDS,
+            )
 
     def test_should_hint_at_the_history_when_the_merge_base_is_missing(
         self, mocker: MockerFixture

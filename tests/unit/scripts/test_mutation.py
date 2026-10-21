@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -134,6 +135,29 @@ class TestCommands:
             "run",
             "app.domain.errors.domain_errors.*",
         ]
+        assert [call.kwargs["timeout"] for call in run.call_args_list] == [
+            mutation.MUTMUT_RUN_TIMEOUT_SECONDS,
+            mutation.MUTMUT_RESULTS_TIMEOUT_SECONDS,
+        ]
+
+    def test_should_read_the_changed_files_from_git_within_a_timeout(
+        self, mocker: MockerFixture
+    ) -> None:
+        run = mocker.patch("scripts.mutation.subprocess.run")
+        run.return_value.stdout = "app/domain/a.py\nREADME.md\n"
+
+        assert mutation.changed_files("origin/main") == ["app/domain/a.py", "README.md"]
+        assert run.call_args.kwargs["timeout"] == mutation.GIT_TIMEOUT_SECONDS
+
+    def test_should_stop_mutmut_before_the_pull_request_job_does(self) -> None:
+        workflow = Path(".github/workflows/mutation.yml").read_text()
+        job = re.search(
+            r"^  mutation-changed:\n(?:    .*\n)*?    timeout-minutes: (\d+)$", workflow, re.M
+        )
+
+        assert job is not None
+        job_seconds = int(job[1]) * 60
+        assert job_seconds > mutation.MUTMUT_RUN_TIMEOUT_SECONDS
 
     def test_should_read_minimum_score_from_environment(
         self, monkeypatch: pytest.MonkeyPatch

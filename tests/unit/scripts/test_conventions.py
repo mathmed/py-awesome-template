@@ -13,6 +13,8 @@ from tests.fakes.files import write
 MODULE = "app/module.py"
 MAX_FUNCTION = conventions.MAX_FUNCTION_LINES
 MAX_CLASS = conventions.MAX_CLASS_LINES
+GIT_TIMEOUT_SECONDS = 60
+SCRIPT_TIMEOUT_SECONDS = 60
 
 
 def kinds_in(source: str, path: str = MODULE) -> list[Kind]:
@@ -392,7 +394,11 @@ class TestScan:
 
     def test_should_cover_every_directory_with_python_in_the_repository(self) -> None:
         tracked = subprocess.run(
-            ["git", "ls-files", "*.py"], capture_output=True, text=True, check=True, timeout=60
+            ["git", "ls-files", "*.py"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=GIT_TIMEOUT_SECONDS,
         ).stdout.split()
 
         directories = {Path(name).parts[0] for name in tracked}
@@ -449,7 +455,7 @@ class TestCommands:
             capture_output=True,
             text=True,
             check=False,
-            timeout=60,
+            timeout=SCRIPT_TIMEOUT_SECONDS,
         )
 
         assert result.returncode == 0

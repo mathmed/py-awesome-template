@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -605,6 +606,25 @@ class TestRunCommand:
 
         assert code == 0
         assert Fragment.read(tmp_path / "vulture.json").exit_code == 3
+
+    def test_should_stop_the_whole_command_at_the_timeout(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(quality_report, "COMMAND_TIMEOUT_SECONDS", 1)
+        started = time.monotonic()
+
+        code = quality_report.run_command(
+            Analysis.PYTEST,
+            ["bash", "-c", "echo start; sleep 30 & wait"],
+            tmp_path,
+            is_advisory=False,
+        )
+
+        stored = Fragment.read(tmp_path / "pytest.json")
+        assert time.monotonic() - started < 10
+        assert code == quality_report.TIMEOUT_EXIT_CODE
+        assert stored.exit_code == quality_report.TIMEOUT_EXIT_CODE
+        assert stored.output == "start\n\nbash stopped after the 1s timeout\n"
 
     def test_should_fail_with_127_when_command_does_not_exist(self, tmp_path: Path) -> None:
         code = quality_report.run_command(

@@ -14,6 +14,8 @@
 
 PORT="${SMOKE_PORT:-18000}"
 TIMEOUT="${SMOKE_TIMEOUT:-30}"
+# Constraint: curl waits forever by default, so a hung API would outlast the boot deadline
+HTTP_TIMEOUT_SECONDS=10
 ENV_FILE="${SMOKE_ENV_FILE:-.env.example}"
 BASE_URL="http://127.0.0.1:${PORT}"
 COMPOSE_FILE="${SMOKE_COMPOSE_FILE:-}"
@@ -92,7 +94,7 @@ wait_for_health() {
   started_us="$(now_us)"
   echo ">> waiting for /health (up to ${TIMEOUT}s)"
   deadline=$((SECONDS + TIMEOUT))
-  until curl --silent --fail --output /dev/null "${BASE_URL}/health"; do
+  until curl --silent --fail --max-time "$HTTP_TIMEOUT_SECONDS" --output /dev/null "${BASE_URL}/health"; do
     kill -0 "$API_PID" 2>/dev/null || fail "the API process exited before becoming healthy"
     [ "$SECONDS" -lt "$deadline" ] || fail "the API did not become healthy within ${TIMEOUT}s"
     sleep 0.5

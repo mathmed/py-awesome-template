@@ -17,7 +17,7 @@ boot_api
 
 check_endpoint() {
   local path="$1" body
-  body="$(curl --silent --show-error --fail-with-body "${BASE_URL}${path}")" || fail "GET ${path} failed: ${body:-no response}"
+  body="$(curl --silent --show-error --fail-with-body --max-time "$HTTP_TIMEOUT_SECONDS" "${BASE_URL}${path}")" || fail "GET ${path} failed: ${body:-no response}"
   echo ">> GET ${path} -> ${body}"
 }
 

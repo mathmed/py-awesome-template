@@ -12,6 +12,9 @@ from pathlib import Path
 
 DEFAULT_MIN_SCORE = 90.0
 MIN_SCORE_ENV = "MUTATION_MIN_SCORE"
+GIT_TIMEOUT_SECONDS = 60
+MUTMUT_RESULTS_TIMEOUT_SECONDS = 120
+MUTMUT_RUN_TIMEOUT_SECONDS = 12 * 60
 RESULT_PREFIX = "MUTATION_RESULT: "
 RESULT_LINE = re.compile(r"^\s*(?P<name>\S+): (?P<status>.+?)\s*$")
 MUTANT_NAME = re.compile(r"^(?P<module>.+)\.x(?P<function>[^.]+)__mutmut_\d+$")
@@ -146,6 +149,7 @@ def changed_files(base_ref: str) -> list[str]:
         check=True,
         capture_output=True,
         text=True,
+        timeout=GIT_TIMEOUT_SECONDS,
     ).stdout
     return output.splitlines()
 
@@ -175,7 +179,11 @@ def filter_by_targets(results: list[MutantResult], targets: list[str]) -> list[M
 
 def read_results(targets: list[str]) -> list[MutantResult]:
     output = subprocess.run(
-        ["mutmut", "results", "--all", "true"], check=True, capture_output=True, text=True
+        ["mutmut", "results", "--all", "true"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=MUTMUT_RESULTS_TIMEOUT_SECONDS,
     ).stdout
     return filter_by_targets(parse_results(output), targets)
 
@@ -220,7 +228,7 @@ def changed_command(base_ref: str) -> int:
         print(skipped_result_line(min_score()))
         return 0
     print("Mutating:", *targets, sep="\n  ", flush=True)
-    subprocess.run(["mutmut", "run", *targets], check=True)
+    subprocess.run(["mutmut", "run", *targets], check=True, timeout=MUTMUT_RUN_TIMEOUT_SECONDS)
     return report_command(targets)
 
 

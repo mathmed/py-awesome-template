@@ -1,9 +1,12 @@
 import argparse
+import contextlib
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
@@ -19,6 +22,8 @@ MAX_SUPPRESSION_CHANGES_LISTED = 50
 CONVENTIONS_RESULT_PREFIX = "CONVENTIONS_RESULT: "
 MAX_CONVENTION_VIOLATIONS_LISTED = 50
 UV_NOISE = re.compile(r"^warning: `VIRTUAL_ENV=.*$", re.MULTILINE)
+COMMAND_TIMEOUT_SECONDS = 30 * 60
+TIMEOUT_EXIT_CODE = 124
 
 
 class Analysis(StrEnum):
@@ -731,7 +736,6 @@ def parse_job_results(needs_json: str) -> dict[str, str]:
 def run_command(
     analysis: Analysis, command: list[str], directory: Path, *, is_advisory: bool
 ) -> int:
-    lines: list[str] = []
     try:
         process = subprocess.Popen(
             command,
@@ -739,19 +743,58 @@ def run_command(
             stderr=subprocess.STDOUT,
             text=True,
             errors="replace",
+            start_new_session=True,
         )
     except OSError as error:
         message = f"could not run {command[0]}: {error}"
         print(message, file=sys.stderr)
         Fragment(analysis, 127, message, is_advisory).write(directory)
         return 127
+    output, has_timed_out = stream_until_deadline(process, COMMAND_TIMEOUT_SECONDS)
+    exit_code = process.wait()
+    if has_timed_out:
+        notice = f"\n{command[0]} stopped after the {COMMAND_TIMEOUT_SECONDS}s timeout\n"
+        sys.stdout.write(notice)
+        output += notice
+        exit_code = TIMEOUT_EXIT_CODE
+    Fragment(analysis, exit_code, output, is_advisory).write(directory)
+    return 0 if is_advisory else exit_code
+
+
+def stream_until_deadline(process: subprocess.Popen[str], timeout: float) -> tuple[str, bool]:
+    expired = threading.Event()
+    timer = threading.Timer(timeout, expire, (process, expired))
+    timer.start()
+    try:
+        output = stream(process)
+    except KeyboardInterrupt:
+        stop_process_group(process)
+        raise
+    finally:
+        timer.cancel()
+    return output, expired.is_set()
+
+
+def stream(process: subprocess.Popen[str]) -> str:
     assert process.stdout is not None
+    lines: list[str] = []
     for line in process.stdout:
         sys.stdout.write(line)
         lines.append(line)
-    exit_code = process.wait()
-    Fragment(analysis, exit_code, "".join(lines), is_advisory).write(directory)
-    return 0 if is_advisory else exit_code
+    return "".join(lines)
+
+
+def expire(process: subprocess.Popen[str], expired: threading.Event) -> None:
+    expired.set()
+    stop_process_group(process)
+
+
+# Constraint: a command started through `uv run` (or a shell) has children of its own that keep the
+# output pipe open after it dies, so the read would only end with them: the command runs in a session
+# of its own and the whole group is killed.
+def stop_process_group(process: subprocess.Popen[str]) -> None:
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGKILL)
 
 
 def footer_from_environment() -> str:
