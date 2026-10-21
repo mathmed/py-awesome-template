@@ -13,9 +13,7 @@ MARKER = "<!-- quality-report -->"
 DEFAULT_DIRECTORY = Path("quality-fragments")
 MAX_DETAILS_CHARS = 6000
 MAX_SURVIVORS_LISTED = 50
-# Must match scripts/mutation.py, which prints this line followed by a JSON document
 MUTATION_RESULT_PREFIX = "MUTATION_RESULT: "
-# Must match scripts/suppressions.py, which prints this line followed by a JSON document
 SUPPRESSIONS_RESULT_PREFIX = "SUPPRESSIONS_RESULT: "
 MAX_SUPPRESSION_CHANGES_LISTED = 50
 UV_NOISE = re.compile(r"^warning: `VIRTUAL_ENV=.*$", re.MULTILINE)
@@ -311,7 +309,6 @@ SCHEMATHESIS_VERDICT = re.compile(r"^=+ (?P<verdict>.+?) in [\d.]+s =+$", re.MUL
 SCHEMATHESIS_FAILURE = re.compile(r"^\s*❌ (?P<check>[^:\n]+): (?P<count>\d+)$", re.MULTILINE)
 SCHEMATHESIS_OPERATIONS = r"Operations:\s+\d+ selected / (\d+) total"
 MAX_API_LOG_CHARS = 2000
-# Must match API_LABEL in scripts/contract.sh
 CONTRACT_LABEL = "contract"
 
 

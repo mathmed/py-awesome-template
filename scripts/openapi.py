@@ -14,7 +14,8 @@ BASE_SCHEMA = "base.openapi.json"
 HEAD_SCHEMA = "head.openapi.json"
 BASE_TREE = "base-tree"
 GIT_TIMEOUT_SECONDS = 120
-# The base export may install the base branch's dependencies into a fresh environment first
+# Constraint: the base export may first install the base branch's dependencies into a fresh
+# environment.
 EXPORT_TIMEOUT_SECONDS = 600
 OASDIFF_TIMEOUT_SECONDS = 120
 OASDIFF_NOT_FOUND = 127
@@ -50,7 +51,8 @@ def merge_base(base_ref: str, repository: Path) -> str:
 
 
 def project_environment() -> dict[str, str]:
-    # Each checkout must use its own project environment, not the one this script runs in
+    # Constraint: each checkout runs in its own project environment, not in the one this script runs
+    # in.
     return {key: value for key, value in os.environ.items() if key != "VIRTUAL_ENV"}
 
 

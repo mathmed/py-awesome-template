@@ -12,7 +12,6 @@ from pathlib import Path
 
 DEFAULT_MIN_SCORE = 90.0
 MIN_SCORE_ENV = "MUTATION_MIN_SCORE"
-# Machine-readable line read by scripts/quality_report.py (keep the prefix in sync)
 RESULT_PREFIX = "MUTATION_RESULT: "
 RESULT_LINE = re.compile(r"^\s*(?P<name>\S+): (?P<status>.+?)\s*$")
 MUTANT_NAME = re.compile(r"^(?P<module>.+)\.x(?P<function>[^.]+)__mutmut_\d+$")

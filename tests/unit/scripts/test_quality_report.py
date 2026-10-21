@@ -1,10 +1,11 @@
 import json
+import re
 from collections import Counter
 from pathlib import Path
 
 import pytest
 
-from scripts import quality_report, suppressions
+from scripts import mutation, quality_report, suppressions
 from scripts.quality_report import (
     Analysis,
     Fragment,
@@ -341,6 +342,9 @@ class TestOasdiff:
 
 
 class TestMutation:
+    def test_should_share_the_result_prefix_with_the_producer(self) -> None:
+        assert quality_report.MUTATION_RESULT_PREFIX == mutation.RESULT_PREFIX
+
     def test_should_list_survivors_with_file_and_function(self) -> None:
         survivor = {
             "file": "app/domain/x.py",
@@ -617,3 +621,28 @@ class TestMain:
         )
 
         assert quality_report.main() == 5
+
+
+class TestWiring:
+    def test_should_have_every_section_job_in_the_needs_of_the_report(self) -> None:
+        ci = Path(".github/workflows/ci.yml").read_text()
+        needs = re.search(r"^    needs: \[(?P<jobs>[^\]]+)\]$", ci, re.MULTILINE)
+
+        assert needs is not None
+        jobs = {job.strip() for job in needs["jobs"].split(",")}
+        assert {section.job for section in quality_report.SECTIONS} <= jobs
+
+    def test_should_upload_a_fragment_from_every_section_job(self) -> None:
+        workflows = "".join(path.read_text() for path in Path(".github/workflows").glob("*.yml"))
+
+        for section in quality_report.SECTIONS:
+            assert f"name: quality-fragment-{section.job}" in workflows
+
+    @pytest.mark.parametrize(
+        ("script", "label"),
+        [("scripts/smoke.sh", "smoke"), ("scripts/contract.sh", quality_report.CONTRACT_LABEL)],
+    )
+    def test_should_share_the_label_of_the_messages_with_the_boot_scripts(
+        self, script: str, label: str
+    ) -> None:
+        assert f"\nAPI_LABEL={label}\n" in Path(script).read_text()

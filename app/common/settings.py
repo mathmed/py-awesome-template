@@ -16,7 +16,6 @@ class Settings(BaseSettings):
     env: Environment = Environment.DEVELOPMENT
     app_name: str = "Awesome Python Template"
     log_level: str = "INFO"
-    # JSON list, e.g. CORS_ORIGINS='["http://localhost:3000"]'
     cors_origins: list[str] = []
 
     @property

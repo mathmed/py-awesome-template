@@ -13,7 +13,6 @@ from pathlib import Path
 
 DEFAULT_BASELINE = Path("suppressions-baseline.json")
 DEFAULT_ROOTS = (Path("app"), Path("scripts"), Path("tests"))
-# Machine-readable line read by scripts/quality_report.py (keep the prefix in sync)
 RESULT_PREFIX = "SUPPRESSIONS_RESULT: "
 
 
