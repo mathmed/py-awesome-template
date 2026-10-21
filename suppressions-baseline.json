@@ -1,5 +1,1 @@
-{
-  "app/presentation/fastapi/handlers/domain_error_handler.py": {
-    "nosec": 1
-  }
-}
+{}

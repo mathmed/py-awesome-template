@@ -1,6 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
-from pytest import fixture, mark
+from pytest import fixture, mark, raises
 
 from app.domain.errors.domain_errors import (
     ConflictError,
@@ -8,7 +8,10 @@ from app.domain.errors.domain_errors import (
     NotFoundError,
     ServiceUnavailableError,
 )
-from app.presentation.fastapi.handlers.domain_error_handler import register_error_handlers
+from app.presentation.fastapi.handlers.domain_error_handler import (
+    domain_error_handler,
+    register_error_handlers,
+)
 
 
 @fixture
@@ -38,3 +41,10 @@ def test_should_map_domain_errors_to_http_status(
     response = client.get(f"/raise/{kind}")
     assert response.status_code == status_code
     assert response.json() == {"detail": "some message"}
+
+
+async def test_should_refuse_an_error_that_is_not_a_domain_error() -> None:
+    request = Request({"type": "http", "method": "GET", "path": "/", "headers": []})
+
+    with raises(TypeError, match="ValueError"):
+        await domain_error_handler(request, ValueError("not ours"))
