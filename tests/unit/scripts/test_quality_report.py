@@ -572,7 +572,7 @@ class TestRender:
         report = render(fragments, {})
 
         assert "<details><summary>Output</summary>" in report
-        assert "[...truncado...]" in report
+        assert "[...truncated...]" in report
         assert len(report) < 30000
 
     def test_should_not_let_output_break_the_code_fence(self) -> None:

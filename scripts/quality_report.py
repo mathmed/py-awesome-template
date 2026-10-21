@@ -133,7 +133,7 @@ def clean(output: str) -> str:
 def tail(text: str, limit: int = MAX_DETAILS_CHARS) -> str:
     if len(text) <= limit:
         return text
-    return "[...truncado...]\n" + text[-limit:]
+    return "[...truncated...]\n" + text[-limit:]
 
 
 def first_int(pattern: str, text: str, default: int = 0) -> int:
