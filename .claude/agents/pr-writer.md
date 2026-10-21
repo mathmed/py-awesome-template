@@ -1,7 +1,7 @@
 ---
 name: pr-writer
 model: opus
-description: Use after the coder agent has pushed a branch and left handoff notes. Reads the diff cold, commit by commit, assigns the risk level, fills .github/pull_request_template.md, opens the PR with a risk:<level> label and stops. Never writes code, never merges.
+description: Use after the coder agent has pushed a branch and left handoff notes, and the reviewer has reviewed the branch. Reads the diff cold, commit by commit, and the reviewer's report, assigns the risk level, fills .github/pull_request_template.md, opens the PR with a risk:<level> label and stops. Never writes code, never merges.
 tools: Bash, Read, Glob, Grep
 ---
 
@@ -19,8 +19,11 @@ commands and open (or update) the PR. Then you stop.
 2. **The handoff notes** of the author: `.handoff/<branch>.md`, with every `/` of the branch name replaced by
    `-` (format in `CLAUDE.md`, "Handoff notes"). They are claims to check, not facts. If the file is missing,
    carry on and write "no handoff notes" under **Not verified**.
-3. **The commit history**: `git log --reverse --format='%H%n%s%n%b' origin/<base>..origin/<branch>`.
-4. **The diff** against the base branch: `git diff origin/<base>...origin/<branch>`, and per commit
+3. **The reviewer's report**: `.handoff/<branch>.review.md`, which whoever orchestrates saves from what the
+   `reviewer` returned (the reviewer writes no files). If the file is missing (the reviewer failed or did
+   not run), carry on: the PR says **No review.** prominently (step 7).
+4. **The commit history**: `git log --reverse --format='%H%n%s%n%b' origin/<base>..origin/<branch>`.
+5. **The diff** against the base branch: `git diff origin/<base>...origin/<branch>`, and per commit
    `git show <sha>`.
 
 `<base>` is the branch the PR targets (`main` unless told otherwise).
@@ -120,19 +123,31 @@ thing; keep the list short. It must contain:
 
 - the evidence for every Behavior item (step 4), so a reviewer can go from each plain-language item to the
   code or test behind it;
-- changes to pipeline config or checks (a reviewer must see when a gate changes), behavior covered only by
-  code and not by tests, mismatches with the notes and anything that departs from the task.
+- changes to pipeline config or checks (a reviewer must see when a gate changes), changed baselines
+  (`suppressions-baseline.json`, `[tool.ruff.lint.per-file-ignores]`, any exception to `make conventions`),
+  behavior covered only by code and not by tests, mismatches with the notes and anything that departs from
+  the task.
 
 Add places where the logic is subtle or the tests are thin.
 
-### 7. Deploy steps
+### 7. Review
+
+Short. The first line is the reviewer's verdict, as written. Then one item per finding still open: check
+each finding of the report against the diff at the head commit (`coder` may have fixed it after the
+review) and list only those the diff still has, each with its severity, what it is and why it stayed open
+(from the handoff notes, under Decisions, or "no justification in the notes"), in plain words: the pointer
+to the code goes in **Look here**. An open blocking finding also goes in the Risk line. With no open
+finding, write "No open findings." Without the review file, write **No review.** in bold as the first
+line of this section, repeat it in the Risk line and put "no review" under **Not verified**.
+
+### 8. Deploy steps
 
 Always present. Derive it from the diff and use the notes only as a hint: new environment variables or
 secrets, migration order, flags, backfills, external configuration (repository settings, third-party
 consoles) and how to roll back (revert the merge, down migration, turn the flag off). When nothing is
 needed, replace the checklist with exactly: `None: normal merge and deploy.`
 
-### 8. Not verified and Mismatch
+### 9. Not verified and Mismatch
 
 - **Not verified**: the author's "not verified" items that are still true after reading the diff, plus what
   you could not confirm (for example: CI has not run yet, behavior against real dependencies, Behavior items
@@ -141,13 +156,13 @@ needed, replace the checklist with exactly: `None: normal merge and deploy.`
   not do, the diff does something significant the notes do not mention, or claimed tests do not exist), add
   `**Mismatch:** <what the notes said> vs <what the diff does>`.
 
-### 9. Write and check the body
+### 10. Write and check the body
 
 Title: Conventional Commits in English, `<type>: <short description>` of the dominant change.
 
 Body: the template sections in order, with the guidance comments removed. Before opening, check:
 
-- every section is present and in order; Deploy steps is never empty;
+- every section is present and in order; Deploy steps and Review are never empty;
 - at most 5 Behavior items, in plain words, with no backticks, paths or code identifiers;
 - every Behavior item has a clickable pointer in Look here, or is listed under Not verified as lacking
   evidence;
@@ -156,7 +171,7 @@ Body: the template sections in order, with the guidance comments removed. Before
   concrete sentence what can break;
 - no secrets, tokens, personal data or internal identifiers in the text.
 
-### 10. Open the PR and label it
+### 11. Open the PR and label it
 
 1. Make sure the four labels exist with `make risk-labels`. It is idempotent (`gh label create --force`), so
    run it instead of searching the label list, whose search results can lag behind. Without that target,

@@ -19,7 +19,7 @@ A production-ready starting point for Python 3.14 APIs with FastAPI: a layered f
 - **Production basics**: typed settings ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)), JSON logs in production, configurable CORS, domain errors mapped to HTTP status codes and `/health` (liveness) and `/ready` (readiness) routes.
 - **Deterministic validation for AI-generated code**: a boot smoke test, API contract tests (Schemathesis), breaking-change detection on the OpenAPI schema (oasdiff), architecture contracts, mutation testing, a suppression ratchet, a code-conventions check and a required risk label on every PR (see [Validation layers](#validation-layers)).
 - **Docker**: a `dev` stage with hot reload and a slim, non-root `production` stage with healthcheck.
-- **AI-ready**: `CLAUDE.md`/`AGENTS.md` with the project rules, Claude Code agents (`coder`, `pr-writer`, `reviewer`), a PR template built for fast review, permissions and a hook that formats every file the agent edits.
+- **AI-ready**: `CLAUDE.md`/`AGENTS.md` with the project rules, Claude Code agents (`coder`, `reviewer`, `pr-writer`) with a mandatory review between implementation and PR, a PR template built for fast review, permissions and a hook that formats every file the agent edits.
 
 ## Getting started
 
@@ -280,29 +280,31 @@ The domain never imports from `infra`, `presentation` or `common`: it declares c
 The template is ready for coding agents such as [Claude Code](https://docs.claude.com/en/docs/claude-code/overview):
 
 - **`CLAUDE.md`** (also `AGENTS.md`, a symlink read by Cursor, Codex and others): architecture rules, commands and the checklist every change must pass before a PR.
-- **`.claude/agents/coder.md`**: implements a task on a `claude/<slug>` branch, with tests, runs all checks, commits, pushes and leaves handoff notes. It opens the PR itself only as a fallback.
-- **`.claude/agents/pr-writer.md`**: reads the pushed branch cold, commit by commit, fills the PR template, assigns the risk level, opens the PR with its `risk:<level>` label and stops. Never writes code, never merges.
-- **`.claude/agents/reviewer.md`**: read-only review of a branch against the project rules.
+- **`.claude/agents/coder.md`**: implements a task on a `claude/<slug>` branch, with tests, runs all checks, reviews its own diff against every code directive, commits, pushes and leaves handoff notes; then fixes the blocking findings of the review. It opens the PR itself only as a fallback.
+- **`.claude/agents/reviewer.md`**: read-only review of a branch against the project rules, including every code directive, weakened checks (baselines and `per-file-ignores`) and the PR description. It writes no files: it returns the report, which whoever orchestrates saves to `.handoff/<branch>.review.md`.
+- **`.claude/agents/pr-writer.md`**: reads the pushed branch cold, commit by commit, and the reviewer's report, fills the PR template, assigns the risk level, opens the PR with its `risk:<level>` label and stops. Never writes code, never merges.
 - **`.claude/settings.json`**: allows the common commands (uv, make, read-only git, gh), denies destructive ones (`rm -rf`, force push, hard reset, reading `.env`) and runs `.claude/hooks/ruff.sh` after every edit, formatting the file and sending unfixable lint errors back to the agent.
 
-Create an empty `.local_dev` file at the root to work directly on your local branch: the agent then edits files without delegating to `coder` or opening PRs.
+Create an empty `.local_dev` file at the root to work directly on your local branch: the agent then edits files without delegating to the other agents or opening PRs.
 
 ### Pull request flow
 
-Reading AI-written diffs is the bottleneck, so the PR description tells the reviewer how much attention the PR deserves and what changed in behavior and in rules, written by an agent that did not write the code:
+Reading AI-written diffs is the bottleneck, so every branch goes through a reviewer that did not write the code before the PR exists, and the PR description tells the human reviewer how much attention the PR deserves and what changed in behavior and in rules, written by another agent that did not write the code either. Whoever orchestrates (the main agent of the session) invokes one agent at a time:
 
-1. **`coder`** implements on a branch, runs every check, commits one logical step per commit, pushes and writes **handoff notes** to `.handoff/<branch>.md` (gitignored): the task verbatim, what was done and why, decisions, deploy notes and an explicit **Not verified** list. It does not open the PR or assess the risk.
-2. **`pr-writer`** (Opus) gets the task, the branch and the notes. It reads the diff commit by commit, writes behavior items per commit and aggregates them, and fills `.github/pull_request_template.md`:
+1. **`coder`** implements on a branch, runs every check, reviews its own diff against every code directive, commits one logical step per commit, pushes and writes **handoff notes** to `.handoff/<branch>.md` (gitignored): the task verbatim, what was done and why, decisions, deploy notes and an explicit **Not verified** list. It does not open the PR or assess the risk.
+2. **`reviewer`** (mandatory) reviews the branch against `CLAUDE.md` and returns its report by severity (blocking, should fix, nit) with a verdict. It only reads: whoever orchestrates saves the report to `.handoff/<branch>.review.md` and gives its path to `coder`, which fixes the blocking findings, justifies in the notes each non-blocking one it leaves out, pushes and updates the notes.
+3. **`pr-writer`** (Opus) gets the task, the branch, the notes and the report. It reads the diff commit by commit, writes behavior items per commit and aggregates them, and fills `.github/pull_request_template.md`:
    - **Risk**: `low | medium | high | critical` with one line of why. It assigns the level itself by judgement, defaulting to `low` (no behavior change: docs, tests, CI, dependency patch or minor bumps, refactors covered by tests) or `medium` (new behavior, a new endpoint or option, or any deploy step). `high` is for changes that can break production or change existing behavior drastically but are recoverable by revert; `critical` for failures that take down what users or money depend on, leak data or cut the only way to recover. High and critical need one concrete sentence naming what can break, otherwise the level is lowered; touching pipeline files is not by itself a reason for `high`;
    - **Summary**: one sentence on what changes in behavior and why;
    - **Behavior**: at most five *before → after* items about rules and observable behavior, in plain words for someone who has not read the code: no file, function, test or code references;
    - **Unchanged**;
    - **Look here**: the only section with file references. Each item is a clickable permalink to the test or function that proves or contains a behavior change, and why it deserves human eyes. Every Behavior item has its evidence here; one without evidence goes under **Not verified** instead of getting an invented pointer;
+   - **Review**: the reviewer's verdict and the findings the diff still has, with why they stayed open; **No review.** prominently when there is no report;
    - **Deploy steps** (always present; "None: normal merge and deploy." when nothing is needed) and an honest **Not verified**, plus a **Mismatch** line when the diff contradicts the handoff notes.
 
    It opens the PR with the `risk:<level>` label (creating the labels if missing) and stops.
-3. **Fallback**: if `pr-writer` fails, `coder` opens the PR with a minimal body (summary plus the template headings, risk "unassessed", no label), so a failure never blocks delivery; the [Risk label](#risk-label) check stays red until a person sets the label.
-4. **Merge**: only the owner merges. The Quality Report comment and the Risk label check run on every PR.
+4. **Fallbacks**: if `reviewer` fails or cannot run, `pr-writer` goes on and the PR says **No review.** prominently. If `pr-writer` fails, `coder` opens the PR with a minimal body (summary plus the template headings, risk "unassessed", no label), so a failure never blocks delivery; the [Risk label](#risk-label) check stays red until a person sets the label.
+5. **Merge**: only the owner merges. The Quality Report comment and the Risk label check run on every PR.
 
 People opening PRs by hand get the same template from GitHub.
 
@@ -332,7 +334,7 @@ People opening PRs by hand get the same template from GitHub.
 | `.env.example`               | Environment variables template.                                         |
 | `.github/workflows/ci.yml`   | CI pipeline: one job per analysis plus the `quality-report` job.        |
 | `.github/dependabot.yaml`    | Dependency updates.                                                     |
-| `.github/pull_request_template.md` | PR description structure: risk, behavior, look here, deploy steps. |
+| `.github/pull_request_template.md` | PR description structure: risk, behavior, look here, review, deploy steps. |
 | `.vscode/settings.json`      | Ruff format on save and pytest integration.                             |
 | `CLAUDE.md` / `AGENTS.md`    | Instructions for AI coding agents.                                      |
 | `.claude/`                   | Claude Code agents, permissions and hooks.                              |

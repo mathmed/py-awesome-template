@@ -27,7 +27,7 @@ make mutation-changed # mutation testing of only the domain files changed vs BAS
 make suppressions # suppression ratchet: fails when noqa/type: ignore/nosec/skip/ruff per-file-ignores...
                   # differ from the baseline
 make suppressions-update # lower suppressions-baseline.json after removing suppressions (never raises it)
-make conventions # the code preferences no linter checks: fails on any violation, with no baseline
+make conventions  # the code preferences no linter checks: fails on any violation, with no baseline
 make format-code  # fix lint issues and format with ruff
 ```
 
@@ -126,35 +126,45 @@ labelling a PR `risk:high` or `risk:critical`; a change that touches none of the
 ## Workflow
 
 1. **Implement**: code changes are delegated to the `coder` agent (`.claude/agents/coder.md`), which creates
-   a branch, implements, commits (one commit per logical step), pushes and writes the handoff notes. It does
-   not open the PR and does not assess the risk. Never commit directly to `main`.
-2. **Describe and open**: then delegate to the `pr-writer` agent (`.claude/agents/pr-writer.md`) with the
-   original task verbatim, the branch, the base branch and the path of the handoff notes. It reads the diff
-   cold, commit by commit, fills `.github/pull_request_template.md`, assigns the risk level by the rubric in
-   that file (most PRs low or medium; high or critical only with one concrete sentence naming what can
-   break; at least medium when there are deploy steps), opens the PR with the `risk:<level>` label and
-   stops. It never writes code. Behavior items are plain language with no file, function, test
-   or code references; the evidence pointers for them go only in **Look here**, and a behavior without
-   evidence is listed under **Not verified**.
-3. **Fallback**: if `pr-writer` fails or cannot run, delegate back to `coder` saying so: it opens the PR
-   itself with a minimal body (summary plus the template headings, risk "unassessed", no risk label), so a
-   failure never blocks delivery. The Risk label check stays red until a person sets the label.
-4. **Merge**: nobody but the owner merges. Agents never merge, approve or enable auto-merge.
+   a branch, implements, reviews its own diff against every directive, commits (one commit per logical
+   step), pushes and writes the handoff notes. It does not open the PR and does not assess the risk. Never
+   commit directly to `main`.
+2. **Review** (mandatory): then delegate to the `reviewer` agent (`.claude/agents/reviewer.md`) with the
+   branch, the base branch and the path of the handoff notes. It only reads and returns its report, grouped
+   by severity with a verdict; whoever orchestrates saves the report verbatim to
+   `.handoff/<branch>.review.md`.
+3. **Fix**: give `coder` the path of the whole report. It fixes the blocking findings, pushes and records
+   under Decisions, with the reason, each non-blocking finding it leaves out.
+4. **Describe and open**: then delegate to the `pr-writer` agent (`.claude/agents/pr-writer.md`) with the
+   original task verbatim, the branch, the base branch, the path of the handoff notes and the path of the
+   review report. It reads the diff cold, commit by commit, fills `.github/pull_request_template.md` (with
+   the Review section), assigns the risk level by the rubric in that file (most PRs low or medium; high or
+   critical only with one concrete sentence naming what can break; at least medium when there are deploy
+   steps), opens the PR with the `risk:<level>` label and stops. It never writes code. Behavior items are
+   plain language with no file, function, test or code references; the evidence pointers for them go only
+   in **Look here**, and a behavior without evidence is listed under **Not verified**.
+5. **Fallbacks**: if `reviewer` fails or cannot run, go on to `pr-writer`, which writes **No review.**
+   prominently in the PR. If `pr-writer` fails or cannot run, delegate back to `coder` saying so: it opens
+   the PR itself with a minimal body (summary plus the template headings, risk "unassessed", no risk
+   label), so a failure never blocks delivery. The Risk label check stays red until a person sets the
+   label.
+6. **Merge**: nobody but the owner merges. Agents never merge, approve or enable auto-merge.
 
 - **Exception**: if a `.local_dev` file exists at the repository root, the developer is working locally —
-  edit files directly, without delegating to `coder` or `pr-writer` and without creating commits or PRs.
-- Use the `reviewer` agent (`.claude/agents/reviewer.md`) to review a branch against these rules before
-  merging.
+  edit files directly, without delegating to the agents and without creating commits or PRs.
+- The `reviewer` agent also reviews, on request, a branch or PR that did not go through this flow.
 
 ### Handoff notes
 
 The `coder` writes them to `.handoff/<branch>.md` (every `/` of the branch name replaced with `-`; the
-directory is gitignored) after pushing. `pr-writer` checks them against the diff and reports a **Mismatch**
-when they disagree. Sections, in this order:
+directory is gitignored) after pushing, next to the reviewer's report (`.handoff/<branch>.review.md`).
+`reviewer` and `pr-writer` check them against the diff, and `pr-writer` reports a **Mismatch** when they
+disagree. Sections, in this order:
 
 - `## Task`: the original task, verbatim.
 - `## Done`: what changed and why, one line per item.
-- `## Decisions`: choices made, alternatives rejected, conservative options taken on non-blocking doubts.
+- `## Decisions`: choices made, alternatives rejected, conservative options taken on non-blocking doubts,
+  review findings left out and why.
 - `## Deploy notes`: new env vars or secrets, migrations and their order, flags, external configuration; or
   "None".
 - `## Not verified`: everything the author did not or could not check, and why; or "nothing".
@@ -172,9 +182,9 @@ preference, change the check too (`scripts/conventions.py` or `[tool.ruff.lint]`
 - **New standards**: whenever the user asks to change a code pattern (use enums instead of strings, name
   variables a certain way...), ask whether it should become a project standard. If yes, add it to this
   list so it is followed in every future conversation.
-- **Reuse first (YAGNI)**: follow the existing pattern instead of inventing one. Before creating a function,
-  class, module, contract, service or dependency, check whether one already exists and reuse it. When you
-  change shared code, find and update every caller.
+- **Reuse first (YAGNI)**: follow the existing pattern, where it complies with this file, instead of
+  inventing one. Before creating a function, class, module, contract, service or dependency, check whether
+  one already exists and reuse it. When you change shared code, find and update every caller.
 - **Single responsibility**: each module/class has one reason to change. If a module needs to import from
   two unrelated integrations, extract the dependency to an intermediary.
 - **SOLID beyond SRP**: open for extension, closed for modification; depend on abstractions (domain

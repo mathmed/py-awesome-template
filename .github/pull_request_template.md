@@ -20,6 +20,13 @@ cover several Behavior items). Each item says which behavior it proves or contai
 eyes. Also list changes to pipeline config or checks, mismatches and anything that departs from the task. -->
 1. `<test or file:function>` — <which behavior it proves or contains, and why it deserves human eyes>
 
+## Review
+<!-- From the reviewer's report (.handoff/<branch>.review.md): the verdict and, one per line, the findings the diff
+still has, with the severity and why they stayed open. With no open finding: "No open findings." Without a report:
+"No review." (and "no review" under Not verified). -->
+**<reviewer's verdict>**
+- **<blocking | should fix | nit>:** <the finding, in plain words> — <why it stayed open>
+
 ## Deploy steps
 <!-- Always present. If nothing is needed, write: None: normal merge and deploy. -->
 - [ ] Before merge: <migration order, new env vars or secrets, flags>
