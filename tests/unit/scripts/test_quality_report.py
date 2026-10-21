@@ -5,12 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from scripts import mutation, quality_report, suppressions
+from scripts import conventions, mutation, quality_report, suppressions
 from scripts.quality_report import (
     Analysis,
     Fragment,
     Status,
     analyze_bandit,
+    analyze_conventions,
     analyze_import_linter,
     analyze_mutation,
     analyze_oasdiff,
@@ -170,6 +171,15 @@ SUPPRESSIONS_OK = suppressions_output(
 )
 
 
+def conventions_output(violations: tuple[conventions.Violation, ...]) -> str:
+    return "Convention violations: ...\n" + conventions.result_line(violations)
+
+
+PRIVATE_CLASS = conventions.Violation("app/handler.py", 12, conventions.Kind.PRIVATE_CLASS)
+LONG_HANDLER = conventions.Violation("app/handler.py", 401, conventions.Kind.LONG_MODULE, 30)
+CONVENTIONS_OK = conventions_output(())
+
+
 def fragment(analysis: Analysis, output: str = "", exit_code: int = 0) -> Fragment:
     return Fragment(analysis, exit_code, output)
 
@@ -181,6 +191,7 @@ def all_ok_fragments() -> dict[Analysis, Fragment]:
         Analysis.SMOKE: SMOKE_OK,
         Analysis.MUTATION: mutation_output(100.0, []),
         Analysis.SUPPRESSIONS: SUPPRESSIONS_OK,
+        Analysis.CONVENTIONS: CONVENTIONS_OK,
         Analysis.SCHEMATHESIS: SCHEMATHESIS_OK,
         Analysis.OASDIFF: OASDIFF_NO_CHANGES,
     }
@@ -430,6 +441,48 @@ class TestSuppressions:
         finding = analyze_suppressions(fragment(Analysis.SUPPRESSIONS, "SyntaxError: boom", 1))
 
         assert finding.status == Status.FAILED
+        assert "SyntaxError: boom" in finding.details
+
+
+class TestConventions:
+    def test_should_share_the_result_prefix_with_the_producer(self) -> None:
+        assert quality_report.CONVENTIONS_RESULT_PREFIX == conventions.RESULT_PREFIX
+
+    def test_should_report_no_violation(self) -> None:
+        finding = analyze_conventions(fragment(Analysis.CONVENTIONS, CONVENTIONS_OK))
+
+        assert finding.status == Status.OK
+        assert finding.summary == "No convention violations"
+        assert finding.details == ""
+
+    def test_should_list_every_violation_with_file_line_and_kind(self) -> None:
+        output = conventions_output((PRIVATE_CLASS, LONG_HANDLER))
+
+        finding = analyze_conventions(fragment(Analysis.CONVENTIONS, output, 1))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == "2 convention violations"
+        assert finding.details_title == "Violations"
+        assert "| `app/handler.py` | 12 | private-class |" in finding.details
+        assert "| `app/handler.py` | 401 | long-module |" in finding.details
+
+    def test_should_point_to_the_check_for_the_full_list(self) -> None:
+        violations = tuple(
+            conventions.Violation(f"app/m{index:02}.py", 1, conventions.Kind.UNMARKED_COMMENT)
+            for index in range(quality_report.MAX_CONVENTION_VIOLATIONS_LISTED + 1)
+        )
+
+        finding = analyze_conventions(
+            fragment(Analysis.CONVENTIONS, conventions_output(violations), 1)
+        )
+
+        assert "... and 1 more. Run `make conventions` for the full list." in finding.details
+
+    def test_should_fail_when_the_check_crashes(self) -> None:
+        finding = analyze_conventions(fragment(Analysis.CONVENTIONS, "SyntaxError: boom", 1))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == "convention check failed before producing a result"
         assert "SyntaxError: boom" in finding.details
 
 

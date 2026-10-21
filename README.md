@@ -17,7 +17,7 @@ A production-ready starting point for Python 3.14 APIs with FastAPI: a layered f
 - **CI**: every pull request runs all checks and posts a single **Quality Report** comment with the result of every analysis (see [Quality Report](#quality-report)).
 - **Dependabot**: weekly grouped updates for Python dependencies and GitHub Actions.
 - **Production basics**: typed settings ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)), JSON logs in production, configurable CORS, domain errors mapped to HTTP status codes and `/health` (liveness) and `/ready` (readiness) routes.
-- **Deterministic validation for AI-generated code**: a boot smoke test, API contract tests (Schemathesis), breaking-change detection on the OpenAPI schema (oasdiff), architecture contracts, mutation testing, a suppression ratchet and a required risk label on every PR (see [Validation layers](#validation-layers)).
+- **Deterministic validation for AI-generated code**: a boot smoke test, API contract tests (Schemathesis), breaking-change detection on the OpenAPI schema (oasdiff), architecture contracts, mutation testing, a suppression ratchet, a code-conventions check and a required risk label on every PR (see [Validation layers](#validation-layers)).
 - **Docker**: a `dev` stage with hot reload and a slim, non-root `production` stage with healthcheck.
 - **AI-ready**: `CLAUDE.md`/`AGENTS.md` with the project rules, Claude Code agents (`coder`, `pr-writer`, `reviewer`), a PR template built for fast review, permissions and a hook that formats every file the agent edits.
 
@@ -46,7 +46,7 @@ curl "http://localhost:8000/example?field1=hello"
 | `make build`       | Build the production Docker image.                                      |
 | `make test`        | Run all tests with coverage.                                            |
 | `make test-unit`   | Run only the unit tests.                                                |
-| `make hooks`       | Run all quality checks (ruff, mypy, bandit, vulture, xenon, import-linter, suppressions, pip-audit). |
+| `make hooks`       | Run all quality checks (ruff, mypy, bandit, vulture, xenon, import-linter, suppressions, conventions, pip-audit). |
 | `make smoke`       | Boot the real API and call `/health` and `/ready`.                      |
 | `make contract`    | Boot the real API and run Schemathesis against its OpenAPI schema.      |
 | `make openapi-diff` | Fail on breaking OpenAPI changes against `BASE` (default `origin/main`). |
@@ -55,6 +55,7 @@ curl "http://localhost:8000/example?field1=hello"
 | `make mutation`    | Mutation testing of the domain (slow); `make mutation-results` lists survivors. |
 | `make suppressions` | Fail when the suppressions (`noqa`, `type: ignore`, `nosec`, skips, ruff `per-file-ignores`...) differ from `suppressions-baseline.json`. |
 | `make suppressions-update` | Lower the suppression baseline after removing suppressions.     |
+| `make conventions` | Fail on any violation of the code preferences no linter checks, with file, line and kind. |
 | `make check-code`  | Lint and check formatting with ruff.                                    |
 | `make format-code` | Fix lint issues and format the code with ruff.                          |
 
@@ -177,6 +178,24 @@ The goal is zero: no new suppression, and the baseline is there for the owner to
 
 It runs as a pre-commit hook, in `make hooks` and as the `suppressions` CI job. Configuration that disables checks globally (the ruff `select`/`ignore`, `.pre-commit-config.yaml`, the workflows) is not counted here: the `pr-writer` agent always lists pipeline changes under **Look here**, so a reviewer sees when a gate changes.
 
+### Code conventions (`make conventions`)
+
+`scripts/conventions.py` reads the code with `ast` and `tokenize` and fails on any violation of the `CLAUDE.md` preferences that no linter checks, listing file, line and kind. There is no baseline and no exception: fix the code.
+
+| Kind | Fails on | Where |
+| --- | --- | --- |
+| `private-class` | a class whose name starts with `_` | `app/`, `scripts/`, `tests/` |
+| `unmarked-comment` | a block of prose comments whose first line does not start with `Constraint:`, `Pitfall:` or `Tradeoff:`; consecutive comment lines are one block, a comment on a line of code always starts a block, and tool directives and the shebang are skipped | `app/`, `scripts/`, `tests/` |
+| `docstring` | a module, class or function docstring | `app/`, `scripts/`, `tests/` |
+| `bool-name` | a function returning `bool`, or a `bool` parameter or field, without `is_`, `has_`, `should_` or `can_` | `app/`, `scripts/` |
+| `public-methods` | a class with more than 20 public methods (ruff's `PLR0904` is still a preview rule) | `app/`, `scripts/` |
+| `long-module` / `long-function` / `long-class` | a module above 400 lines, a function above 50, a class above 250 | `app/` |
+| `file-order` | a constant after the first function (unless it names a function of the module, like a dispatch table), a public function after a private one, a class after any function | `app/` |
+| `mutable-constant` | a module constant bound to a `list`, `dict` or `set` literal or comprehension | `app/` |
+| `test-name` | a test not named `test_should_...` (fixtures excluded) | `tests/` |
+
+The mark says which of the three allowed cases justifies a comment: the check sees the mark, and the `reviewer` agent checks that it is honest. A test requires the scanned folders to be every folder with versioned Python, so a new top-level package cannot slip past the check. The limits and scopes are constants at the top of the script: changing a preference in `CLAUDE.md` means changing the check in the same PR. It runs as a pre-commit hook, in `make hooks` and as the `conventions` CI job.
+
 ### Risk label
 
 Every PR carries exactly one `risk:low`, `risk:medium`, `risk:high` or `risk:critical` label, assigned by the `pr-writer` agent when it opens the PR (see [Pull request flow](#pull-request-flow)). The level is a judgement about what the change can break, not a function of the files it touches: most PRs are `low` or `medium`, so `high` and `critical` stand out (rubric in `.claude/agents/pr-writer.md`). Before choosing `high` or `critical`, the agent reads the **Critical surfaces** section of `CLAUDE.md`, the list of places where a failure is hardest to undo. It ships as a placeholder with generic examples: a repository derived from this template must replace it with its own surfaces after reading its code.
@@ -197,6 +216,7 @@ Every pull request gets **one** comment (marker `<!-- quality-report -->`, updat
 | Dead code | vulture | `dead-code` | items found (⚠️, advisory: does not block) |
 | Complexity | xenon | `complexity` | blocks above the threshold |
 | Suppressions | `scripts/suppressions.py` | `suppressions` | total vs. baseline; new or removed suppressions by file, kind and line |
+| Code conventions | `scripts/conventions.py` | `conventions` | violations by file, line and kind |
 | Tests and coverage | pytest + coverage | `tests` | passed/failed/total, coverage vs. minimum |
 | Architecture | import-linter | `lint-imports` | contracts kept/broken; broken contract and violating import |
 | Boot smoke | `scripts/smoke.sh` | `smoke` | booted?, `/health` and `/ready`, time to healthy; API logs only on failure |
@@ -208,7 +228,7 @@ Every pull request gets **one** comment (marker `<!-- quality-report -->`, updat
 
 Coverage is part of the report: the separate coverage comment no longer exists on PRs, and `python-coverage-comment-action` only updates the README badge on push to `main`.
 
-**Fragment contract.** A fragment is a JSON file `{"analysis": "<id>", "exit_code": 0, "output": "<tool output>", "advisory": false}`. The renderer parses `output` with one function per analysis, so the format of each section is tested in `tests/unit/scripts/test_quality_report.py`. `advisory` (`--advisory` in the wrapper) records the real exit code but makes the wrapper exit 0, for checks that only inform (vulture). Mutation testing also prints a `MUTATION_RESULT: {json}` line (see `scripts/mutation.py`) and the suppression ratchet a `SUPPRESSIONS_RESULT: {json}` line (see `scripts/suppressions.py`).
+**Fragment contract.** A fragment is a JSON file `{"analysis": "<id>", "exit_code": 0, "output": "<tool output>", "advisory": false}`. The renderer parses `output` with one function per analysis, so the format of each section is tested in `tests/unit/scripts/test_quality_report.py`. `advisory` (`--advisory` in the wrapper) records the real exit code but makes the wrapper exit 0, for checks that only inform (vulture). Mutation testing also prints a `MUTATION_RESULT: {json}` line (see `scripts/mutation.py`) the suppression ratchet a `SUPPRESSIONS_RESULT: {json}` line (see `scripts/suppressions.py`) and the conventions check a `CONVENTIONS_RESULT: {json}` line (see `scripts/conventions.py`).
 
 **Adding an analysis.**
 
@@ -285,7 +305,7 @@ Reading AI-written diffs is the bottleneck, so the PR description tells the revi
 People opening PRs by hand get the same template from GitHub.
 
 > [!NOTE]
-> The **Personal preferences** section of `CLAUDE.md` holds the template author's own taste (no docstrings, `StrEnum` for fixed strings, latest dependency versions, etc.). They are not part of the architecture — change or remove them to match yours.
+> The **Personal preferences** section of `CLAUDE.md` holds the template author's own taste (no docstrings, `StrEnum` for fixed strings, latest dependency versions, etc.). They are not part of the architecture — change or remove them to match yours. The ones marked (conventions) or (ruff) are enforced by `scripts/conventions.py` or ruff: change the check together with the preference.
 
 ## Configuration files
 
@@ -303,6 +323,7 @@ People opening PRs by hand get the same template from GitHub.
 | `scripts/mutation.py`        | Mutation target selection, summary and score gate.                      |
 | `scripts/quality_report.py`  | Runs analyses as CI fragments and renders the single Quality Report.    |
 | `scripts/suppressions.py`    | Suppression ratchet (`make suppressions`).                              |
+| `scripts/conventions.py`     | Code conventions check (`make conventions`).                            |
 | `suppressions-baseline.json` | Committed suppression counts per file and kind.                         |
 | `scripts/risk.py`            | Risk label check: exactly one known `risk:<level>` label.               |
 | `.github/workflows/risk-label.yml` | Fails PRs without exactly one known risk label.                   |

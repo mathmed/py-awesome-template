@@ -1,7 +1,7 @@
 # Base branch used by mutation-changed and openapi-diff
 BASE ?= origin/main
 
-.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code smoke lint-imports mutation mutation-changed mutation-results suppressions suppressions-update contract openapi-diff risk-labels
+.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code smoke lint-imports mutation mutation-changed mutation-results suppressions suppressions-update conventions contract openapi-diff risk-labels
 
 # Install uv (if missing), project dependencies and git hooks
 setup:
@@ -38,7 +38,8 @@ test:
 test-unit:
 	uv run pytest tests/unit
 
-# Run all quality checks (ruff, mypy, bandit, vulture, xenon, import-linter, suppressions, pip-audit)
+# Run all quality checks (ruff, mypy, bandit, vulture, xenon, import-linter, suppressions, conventions,
+# pip-audit)
 hooks:
 	uv run pre-commit run --all-files
 
@@ -85,6 +86,12 @@ suppressions:
 # Lower the baseline after removing suppressions (refuses to raise it, see the README)
 suppressions-update:
 	uv run python scripts/suppressions.py update
+
+# Fail on any violation of the code directives no linter checks (classes named _X, unmarked comments,
+# docstrings, modules/functions/classes above their limits, booleans without is_/has_/should_/can_,
+# file order, mutable constants, tests not named test_should_), listing file, line and kind
+conventions:
+	uv run python scripts/conventions.py
 
 # Create (or update) the risk:<level> labels on the GitHub repository (needs an authenticated gh)
 risk-labels:

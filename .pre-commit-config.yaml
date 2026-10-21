@@ -56,6 +56,12 @@ repos:
         language: system
         pass_filenames: false
 
+      - id: conventions
+        name: code conventions (scripts/conventions.py)
+        entry: uv run python scripts/conventions.py
+        language: system
+        pass_filenames: false
+
       - id: pip-audit
         name: pip-audit
         entry: uv run pip-audit

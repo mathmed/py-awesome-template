@@ -16,6 +16,8 @@ MAX_SURVIVORS_LISTED = 50
 MUTATION_RESULT_PREFIX = "MUTATION_RESULT: "
 SUPPRESSIONS_RESULT_PREFIX = "SUPPRESSIONS_RESULT: "
 MAX_SUPPRESSION_CHANGES_LISTED = 50
+CONVENTIONS_RESULT_PREFIX = "CONVENTIONS_RESULT: "
+MAX_CONVENTION_VIOLATIONS_LISTED = 50
 UV_NOISE = re.compile(r"^warning: `VIRTUAL_ENV=.*$", re.MULTILINE)
 
 
@@ -32,6 +34,7 @@ class Analysis(StrEnum):
     SMOKE = "smoke"
     MUTATION = "mutation"
     SUPPRESSIONS = "suppressions"
+    CONVENTIONS = "conventions"
     SCHEMATHESIS = "schemathesis"
     OASDIFF = "oasdiff"
 
@@ -106,6 +109,7 @@ SECTIONS = [
     Section("Dead code (vulture)", "dead-code", (Analysis.VULTURE,)),
     Section("Complexity (xenon)", "complexity", (Analysis.XENON,)),
     Section("Suppressions (ratchet)", "suppressions", (Analysis.SUPPRESSIONS,)),
+    Section("Code conventions", "conventions", (Analysis.CONVENTIONS,)),
     Section("Tests and coverage (pytest)", "tests", (Analysis.PYTEST,)),
     Section("Architecture (import-linter)", "lint-imports", (Analysis.IMPORT_LINTER,)),
     Section("Boot smoke (/health and /ready)", "smoke", (Analysis.SMOKE,)),
@@ -555,6 +559,59 @@ def analyze_suppressions(fragment: Fragment) -> Finding:
     return Finding(Status.OK, summary, listing, "By kind")
 
 
+@dataclass(frozen=True)
+class ConventionViolation:
+    path: str
+    line: int
+    kind: str
+    count: int
+
+
+@dataclass(frozen=True)
+class ConventionOutcome:
+    violations: list[ConventionViolation]
+
+    @classmethod
+    def parse(cls, output: str) -> ConventionOutcome | None:
+        line = next(
+            (line for line in output.splitlines() if line.startswith(CONVENTIONS_RESULT_PREFIX)),
+            None,
+        )
+        if line is None:
+            return None
+        data = json.loads(line.removeprefix(CONVENTIONS_RESULT_PREFIX))
+        return cls(violations=[ConventionViolation(**item) for item in data["violations"]])
+
+
+def convention_violations_table(violations: list[ConventionViolation]) -> str:
+    rows = [
+        "| File | Line | Kind |",
+        "| --- | --- | --- |",
+        *(
+            f"| `{v.path}` | {v.line} | {v.kind} |"
+            for v in violations[:MAX_CONVENTION_VIOLATIONS_LISTED]
+        ),
+    ]
+    hidden = len(violations) - MAX_CONVENTION_VIOLATIONS_LISTED
+    if hidden > 0:
+        rows.append(f"\n... and {hidden} more. Run `make conventions` for the full list.")
+    return "\n".join(rows)
+
+
+def analyze_conventions(fragment: Fragment) -> Finding:
+    output = clean(fragment.output)
+    outcome = ConventionOutcome.parse(output)
+    if outcome is None:
+        return Finding(
+            Status.FAILED, "convention check failed before producing a result", tail(output)
+        )
+    if outcome.violations:
+        count = plural(len(outcome.violations), "convention violation", "convention violations")
+        details = convention_violations_table(outcome.violations)
+        return Finding(Status.FAILED, count, details, "Violations")
+    return Finding(Status.OK, "No convention violations")
+
+
 ANALYZERS: dict[Analysis, Callable[[Fragment], Finding]] = {
     Analysis.RUFF_CHECK: analyze_ruff_check,
     Analysis.RUFF_FORMAT: analyze_ruff_format,
@@ -568,6 +625,7 @@ ANALYZERS: dict[Analysis, Callable[[Fragment], Finding]] = {
     Analysis.SMOKE: analyze_smoke,
     Analysis.MUTATION: analyze_mutation,
     Analysis.SUPPRESSIONS: analyze_suppressions,
+    Analysis.CONVENTIONS: analyze_conventions,
     Analysis.SCHEMATHESIS: analyze_schemathesis,
     Analysis.OASDIFF: analyze_oasdiff,
 }

@@ -141,6 +141,27 @@ jobs:
           retention-days: 7
 
 
+  conventions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      # Standard library only: no dependency sync needed
+      - name: Code conventions
+        run: >-
+          uv run --no-project python scripts/quality_report.py run conventions --
+          uv run --no-project python scripts/conventions.py
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: quality-fragment-conventions
+          path: quality-fragments/
+          if-no-files-found: ignore
+          retention-days: 7
+
+
   lint-imports:
     runs-on: ubuntu-latest
     steps:
@@ -295,7 +316,7 @@ jobs:
 
   quality-report:
     if: always() && github.event_name == 'pull_request'
-    needs: [lint, types, security, dead-code, complexity, suppressions, lint-imports, smoke, contract, openapi-diff, tests, mutation]
+    needs: [lint, types, security, dead-code, complexity, suppressions, conventions, lint-imports, smoke, contract, openapi-diff, tests, mutation]
     runs-on: ubuntu-latest
     permissions:
       contents: read
