@@ -27,6 +27,7 @@ class Kind(StrEnum):
     TYPE_IGNORE = "type-ignore"
     NOSEC = "nosec"
     NO_COVER = "no-cover"
+    NO_MUTATE = "no-mutate"
     PYLINT = "pylint-disable"
     MYPY = "mypy-directive"
     PYRIGHT = "pyright-directive"
@@ -41,6 +42,9 @@ COMMENT_PATTERNS: tuple[tuple[Kind, re.Pattern[str]], ...] = (
     (Kind.TYPE_IGNORE, re.compile(r"\btype:\s*ignore\b")),
     (Kind.NOSEC, re.compile(r"\bnosec\b", re.IGNORECASE)),
     (Kind.NO_COVER, re.compile(r"\bpragma:\s*no\s*(?:cover|branch)\b", re.IGNORECASE)),
+    # Tradeoff: mutation testing is a gate here, so a mutant left out of the score is a weakened
+    # check too.
+    (Kind.NO_MUTATE, re.compile(r"\bpragma:\s*no\s*mutate\b", re.IGNORECASE)),
     (Kind.PYLINT, re.compile(r"\bpylint:\s*disable", re.IGNORECASE)),
     (Kind.MYPY, re.compile(r"\bmypy:")),
     (Kind.PYRIGHT, re.compile(r"\bpyright:")),
@@ -65,6 +69,7 @@ OWNER_ATTRIBUTES = {
     "unittest": UNITTEST_DECORATORS,
 }
 IMPORTABLE = {"pytest": PYTEST_FUNCTIONS, "unittest": UNITTEST_DECORATORS}
+COLLECT_IGNORE_NAMES = frozenset({"collect_ignore", "collect_ignore_glob"})
 
 
 @dataclass(frozen=True)
@@ -185,9 +190,11 @@ def imported_names(tree: ast.Module) -> dict[str, Kind]:
 def node_kind(node: ast.AST, names: dict[str, Kind]) -> Kind | None:
     if isinstance(node, ast.Attribute):
         return attribute_kind(node)
-    if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-        return names.get(node.id)
-    return None
+    if not isinstance(node, ast.Name):
+        return None
+    if isinstance(node.ctx, ast.Store):
+        return Kind.TEST_SKIP if node.id in COLLECT_IGNORE_NAMES else None
+    return names.get(node.id)
 
 
 def skip_marker_kinds(tree: ast.Module) -> Iterator[tuple[int, Kind]]:

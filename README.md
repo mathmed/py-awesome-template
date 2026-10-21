@@ -163,9 +163,10 @@ Score per module = killed ÷ total mutants. For each survivor, either add the mi
 | `type-ignore` | `# type: ignore`, `# type: ignore[code]` |
 | `nosec` | `# nosec` (bandit) |
 | `no-cover` | `# pragma: no cover`, `# pragma: no branch` |
+| `no-mutate` | `# pragma: no mutate` (mutation testing is a gate, so a mutant left out of the score weakens it) |
 | `pylint-disable` / `mypy-directive` / `pyright-directive` | `# pylint: disable=...`, `# mypy: ...`, `# pyright: ...` |
 | `formatter-off` | `# fmt: off`, `# fmt: skip`, `# isort: skip_file`... |
-| `test-skip` / `test-xfail` | `pytest.mark.skip`/`skipif`/`xfail`, `pytest.skip()`/`importorskip()`/`xfail()`, `unittest.skip*`/`expectedFailure`, `self.skipTest()` |
+| `test-skip` / `test-xfail` | `pytest.mark.skip`/`skipif`/`xfail`, `pytest.skip()`/`importorskip()`/`xfail()`, `unittest.skip*`/`expectedFailure`, `self.skipTest()`, `collect_ignore`/`collect_ignore_glob` |
 | `ruff-per-file-ignore` | each code under `[tool.ruff.lint.per-file-ignores]`, `[tool.ruff.lint.extend-per-file-ignores]` or their `[tool.ruff]` forms, counted under the file pattern instead of a path |
 
 Comments are read with `tokenize`, tests with `ast` and `pyproject.toml` with `tomllib`, so the same text inside a string does not count. The counts are compared with the committed `suppressions-baseline.json`:

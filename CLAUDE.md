@@ -82,13 +82,13 @@ tests/integration/ HTTP tests with TestClient
   (readiness, touches the real dependencies). A new infra dependency needs a `ReadinessCheckContract`
   implementation registered in `check_readiness_factory`.
 - `make suppressions` is a ratchet whose goal is zero: it compares every `# noqa`, `# type: ignore`,
-  `# nosec`, `# pragma: no cover`, tool directive (`# pylint:`, `# mypy:`, `# pyright:`, `# fmt: off`),
-  skipped/xfail test in `app/`, `scripts/` and `tests/` and every code under
-  `[tool.ruff.lint.per-file-ignores]` with `suppressions-baseline.json`, and fails when a `ruff.toml` or
-  `.ruff.toml` exists, which ruff would read instead of `pyproject.toml`. Fix the cause instead of
-  suppressing it. Never raise the baseline (`update --allow-increase`) without the user's explicit
-  approval. When you remove suppressions, run `make suppressions-update` and commit the lower baseline in
-  the same PR.
+  `# nosec`, `# pragma: no cover`, `# pragma: no mutate`, tool directive (`# pylint:`, `# mypy:`,
+  `# pyright:`, `# fmt: off`), skipped/xfail test (`collect_ignore` included) in `app/`, `scripts/` and
+  `tests/` and every code under `[tool.ruff.lint.per-file-ignores]` with `suppressions-baseline.json`,
+  and fails when a `ruff.toml` or `.ruff.toml` exists, which ruff would read instead of `pyproject.toml`.
+  Fix the cause instead of suppressing it. Never raise the baseline (`update --allow-increase`) without
+  the user's explicit approval. When you remove suppressions, run `make suppressions-update` and commit
+  the lower baseline in the same PR.
 - `make conventions` (`scripts/conventions.py`) fails on any violation of the preferences marked
   (conventions) below, listing file, line and kind. There is no baseline and no exception: fix the code.
   It reads every directory with versioned Python (a test fails when one is left out). Changing a marked

@@ -27,6 +27,7 @@ class TestCommentSuppressions:
             ("# nosec B101", Kind.NOSEC),
             ("# pragma: no cover", Kind.NO_COVER),
             ("# pragma: no branch", Kind.NO_COVER),
+            ("# pragma: no mutate", Kind.NO_MUTATE),
             ("# pylint: disable=invalid-name", Kind.PYLINT),
             ("# mypy: ignore-errors", Kind.MYPY),
             ("# pyright: ignore[reportGeneralTypeIssues]", Kind.PYRIGHT),
@@ -82,6 +83,8 @@ class TestTestSkips:
             ("import unittest\n@unittest.skipIf(True, 'x')\ndef f(): ...\n", Kind.TEST_SKIP),
             ("import unittest\n@unittest.expectedFailure\ndef f(): ...\n", Kind.TEST_XFAIL),
             ("def test(self):\n    self.skipTest('x')\n", Kind.TEST_SKIP),
+            ("collect_ignore = ['test_slow.py']\n", Kind.TEST_SKIP),
+            ("collect_ignore_glob = ['*_slow.py']\n", Kind.TEST_SKIP),
         ],
     )
     def test_should_detect_skipped_and_expected_failure_tests(
@@ -89,9 +92,15 @@ class TestTestSkips:
     ) -> None:
         assert kinds_in(source) == [kind]
 
-    def test_should_not_count_other_pytest_marks(self) -> None:
-        source = "import pytest\n@pytest.mark.parametrize('a', [1])\ndef f(a): ...\n"
-
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "import pytest\n@pytest.mark.parametrize('a', [1])\ndef f(a): ...\n",
+            "from pytest import skip\nskip = 1\n",
+            "print(collect_ignore)\n",
+        ],
+    )
+    def test_should_not_count_other_pytest_marks_or_names(self, source: str) -> None:
         assert kinds_in(source) == []
 
     def test_should_fail_loudly_on_invalid_python(self) -> None:
