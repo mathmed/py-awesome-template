@@ -230,7 +230,7 @@ Every pull request gets **one** comment (marker `<!-- quality-report -->`, updat
 
 Coverage is part of the report: the separate coverage comment no longer exists on PRs, and `python-coverage-comment-action` only updates the README badge on push to `main`.
 
-**Fragment contract.** A fragment is a JSON file `{"analysis": "<id>", "exit_code": 0, "output": "<tool output>", "advisory": false}`. The renderer parses `output` with one function per analysis, so the format of each section is tested in `tests/unit/scripts/test_quality_report.py`. `advisory` (`--advisory` in the wrapper) records the real exit code but makes the wrapper exit 0, for checks that only inform (vulture). Mutation testing also prints a `MUTATION_RESULT: {json}` line (see `scripts/mutation.py`) the suppression ratchet a `SUPPRESSIONS_RESULT: {json}` line (see `scripts/suppressions.py`) and the conventions check a `CONVENTIONS_RESULT: {json}` line (see `scripts/conventions.py`).
+**Fragment contract.** A fragment is a JSON file `{"analysis": "<id>", "exit_code": 0, "output": "<tool output>", "advisory": false}`. The renderer parses `output` with one function per analysis, so the format of each section is tested in `tests/unit/scripts/test_quality_report.py`. `advisory` (`--advisory` in the wrapper) records the real exit code but makes the wrapper exit 0, for checks that only inform (vulture). Mutation testing also prints a `MUTATION_RESULT: {json}` line (see `scripts/mutation.py`), the suppression ratchet a `SUPPRESSIONS_RESULT: {json}` line (see `scripts/suppressions.py`) and the conventions check a `CONVENTIONS_RESULT: {json}` line (see `scripts/conventions.py`).
 
 **Adding an analysis.**
 

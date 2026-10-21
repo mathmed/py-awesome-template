@@ -87,8 +87,8 @@ suppressions:
 suppressions-update:
 	uv run python scripts/suppressions.py update
 
-# Fail on any violation of the code directives no linter checks (classes named _X, unmarked comments,
-# docstrings, modules/functions/classes above their limits, booleans without is_/has_/should_/can_,
+# Fail on any violation of the CLAUDE.md preferences no linter checks (classes named _X, unmarked
+# comments, docstrings, modules/functions/classes above their limits, booleans without is_/has_/should_/can_,
 # file order, mutable constants, tests not named test_should_), listing file, line and kind
 conventions:
 	uv run python scripts/conventions.py
