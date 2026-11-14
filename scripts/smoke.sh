@@ -4,7 +4,7 @@
 # The boot (environment file, dependencies, migrations, uvicorn) lives in scripts/api_server.sh, shared
 # with scripts/contract.sh; its header lists the SMOKE_* options.
 #
-# Adapting to your project: see "Boot smoke test" in the README.
+# Adapting to your project (real dependencies): see "Pipeline" in the README.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
