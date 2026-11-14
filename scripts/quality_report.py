@@ -27,6 +27,7 @@ class Analysis(StrEnum):
     MYPY = "mypy"
     BANDIT = "bandit"
     PIP_AUDIT = "pip-audit"
+    DEPTRY = "deptry"
     VULTURE = "vulture"
     XENON = "xenon"
     PYTEST = "pytest"
@@ -105,6 +106,7 @@ SECTIONS = [
     Section("Lint/format (ruff)", "lint", (Analysis.RUFF_CHECK, Analysis.RUFF_FORMAT)),
     Section("Types (mypy)", "types", (Analysis.MYPY,)),
     Section("Security (bandit + pip-audit)", "security", (Analysis.BANDIT, Analysis.PIP_AUDIT)),
+    Section("Dependencies (deptry)", "dependencies", (Analysis.DEPTRY,)),
     Section("Dead code (vulture)", "dead-code", (Analysis.VULTURE,)),
     Section("Complexity (xenon)", "complexity", (Analysis.XENON,)),
     Section("Suppressions (ratchet)", "suppressions", (Analysis.SUPPRESSIONS,)),
@@ -192,6 +194,15 @@ def analyze_pip_audit(fragment: Fragment) -> Finding:
     summary = (
         f"{plural(count, 'vulnerability', 'vulnerabilities')}" if count else "pip-audit failed"
     )
+    return Finding(Status.FAILED, summary, tail(output))
+
+
+def analyze_deptry(fragment: Fragment) -> Finding:
+    output = clean(fragment.output)
+    if fragment.passed:
+        return Finding(Status.OK, "Every import is declared and every dependency is used")
+    count = first_int(r"Found (\d+) dependency issue", output)
+    summary = plural(count, "dependency issue", "dependency issues") if count else "deptry failed"
     return Finding(Status.FAILED, summary, tail(output))
 
 
@@ -564,6 +575,7 @@ ANALYZERS: dict[Analysis, Callable[[Fragment], Finding]] = {
     Analysis.MYPY: analyze_mypy,
     Analysis.BANDIT: analyze_bandit,
     Analysis.PIP_AUDIT: analyze_pip_audit,
+    Analysis.DEPTRY: analyze_deptry,
     Analysis.VULTURE: analyze_vulture,
     Analysis.XENON: analyze_xenon,
     Analysis.PYTEST: analyze_pytest,

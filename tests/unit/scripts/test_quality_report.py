@@ -10,6 +10,7 @@ from scripts.quality_report import (
     Fragment,
     Status,
     analyze_bandit,
+    analyze_deptry,
     analyze_import_linter,
     analyze_mutation,
     analyze_oasdiff,
@@ -437,6 +438,32 @@ class TestAdvisoryTools:
 
         assert finding.status == Status.WARNING
         assert "1 dead code item" in finding.summary
+
+    def test_should_be_ok_when_dependencies_are_clean(self) -> None:
+        finding = analyze_deptry(fragment(Analysis.DEPTRY, "Success! No dependency issues found."))
+
+        assert finding.status == Status.OK
+        assert finding.summary == "Every import is declared and every dependency is used"
+
+    def test_should_fail_with_dependency_issue_count(self) -> None:
+        output = "pyproject.toml: DEP002 'x' defined as a dependency but not used\nFound 2 dependency issues."
+
+        finding = analyze_deptry(fragment(Analysis.DEPTRY, output, 1))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == "2 dependency issues"
+        assert "DEP002" in finding.details
+
+    def test_should_fail_with_single_dependency_issue(self) -> None:
+        finding = analyze_deptry(fragment(Analysis.DEPTRY, "Found 1 dependency issue.", 1))
+
+        assert finding.summary == "1 dependency issue"
+
+    def test_should_report_deptry_failure_without_count(self) -> None:
+        finding = analyze_deptry(fragment(Analysis.DEPTRY, "boom", 2))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == "deptry failed"
 
     def test_should_be_ok_without_dead_code(self) -> None:
         assert analyze_vulture(fragment(Analysis.VULTURE)).status == Status.OK
