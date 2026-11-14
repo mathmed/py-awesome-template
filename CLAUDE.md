@@ -6,7 +6,7 @@ Cursor, Codex and other tools that read `AGENTS.md` follow the same rules.
 ## Project
 
 FastAPI API template on Python 3.14, managed with [uv](https://docs.astral.sh/uv/). See the README for
-setup, environment variables and the folder structure.
+setup, environment variables and the pipeline at a glance.
 
 ## Commands
 
@@ -15,13 +15,14 @@ make setup        # install uv, dependencies and git hooks
 make run          # run the API locally with hot reload
 make test         # all tests with coverage (fails under 80%)
 make test-unit    # only the fast unit tests
-make hooks        # all quality checks: ruff, mypy, bandit, vulture, xenon, import-linter, deptry, suppressions, pip-audit
+make hooks        # all quality checks: ruff, mypy, bandit, deptry, vulture, xenon, jscpd, import-linter, suppressions, pip-audit
 make smoke        # boots the real API and calls /health and /ready
 make contract     # boots the real API and runs Schemathesis against its OpenAPI schema
 make openapi-diff # fails on breaking OpenAPI changes vs BASE (default origin/main); needs oasdiff
 make risk-labels  # create/update the risk:<level> labels on GitHub
 make lint-imports # architecture contracts (import-linter)
 make deptry       # declared dependencies: every import declared, every dependency used
+make jscpd        # duplicated code in app/ (zero clones allowed; needs Node.js, installs the pinned jscpd)
 make mutation     # mutation testing of the whole domain (slow; weekly in CI)
 make mutation-changed # mutation testing of only the domain files changed vs BASE (default origin/main); runs on every PR
 make suppressions # suppression ratchet: fails when noqa/type: ignore/nosec/skip... differ from the baseline
@@ -58,8 +59,8 @@ tests/integration/ HTTP tests with TestClient
   builds the single PR comment (verdict, open failures with the command to reproduce them, a status table
   grouped by area, compared with the last CI run on the base branch when its fragments are available). A new
   analysis needs an `Analysis` value, an analyzer, a `Section` (area, title, job, reproduce command), a job
-  uploading `quality-fragment-<job>`, an entry in the `needs` of `quality-report` and tests (see the README,
-  "Quality Report"). The wrapper keeps the tool's exit code: the job stays the gate; the report only informs.
+  uploading `quality-fragment-<job>`, an entry in the `needs` of `quality-report` and tests (see
+  `scripts/quality_report.py` and `tests/unit/scripts/test_quality_report.py`). The wrapper keeps the tool's exit code: the job stays the gate; the report only informs.
 - Every change comes with tests: unit tests for use cases and infra (mock external dependencies) and
   integration tests for routes.
 
@@ -88,6 +89,11 @@ tests/integration/ HTTP tests with TestClient
 - Pipeline and agent files (`pyproject.toml`, `.pre-commit-config.yaml`, `Makefile`, `scripts/`, `.github/`,
   `.claude/`, `CLAUDE.md`, `suppressions-baseline.json`): do not change them unless the task asks for it,
   and call the change out in the PR.
+- `make jscpd` runs [jscpd](https://github.com/kucherenko/jscpd) with `.jscpd.json` on `app/` (tests left
+  out): any clone of at least 5 lines and 50 tokens fails (`threshold` 0, no baseline). Remove the duplication
+  (extract a shared function or class); never raise the limits or add an `ignore` or a baseline to hide a clone
+  without the user's explicit approval. jscpd is a Node dev tool pinned in `package.json`/`package-lock.json`,
+  never a runtime dependency.
 - `make contract` boots the API like `make smoke` and runs a bounded Schemathesis pass (fixed seed) against
   `/openapi.json`: responses must match the documented status codes and schemas, invalid input must be
   rejected and nothing may return a 5xx. Fix the route or document the response (`responses=` in the
