@@ -55,9 +55,11 @@ tests/integration/ HTTP tests with TestClient
   `.env.example` and in the README environment variables table.
 - CI analyses never post comments on their own: each job runs its tool through
   `scripts/quality_report.py run <analysis> -- <command>` and uploads the fragment; the `quality-report` job
-  builds the single PR comment. A new analysis needs an `Analysis` value, an analyzer, a `Section`, a job
+  builds the single PR comment (verdict, open failures with the command to reproduce them, a status table
+  grouped by area, compared with the last CI run on the base branch when its fragments are available). A new
+  analysis needs an `Analysis` value, an analyzer, a `Section` (area, title, job, reproduce command), a job
   uploading `quality-fragment-<job>`, an entry in the `needs` of `quality-report` and tests (see the README,
-  "Quality Report"). The wrapper keeps the tool's exit code: the job stays the gate.
+  "Quality Report"). The wrapper keeps the tool's exit code: the job stays the gate; the report only informs.
 - Every change comes with tests: unit tests for use cases and infra (mock external dependencies) and
   integration tests for routes.
 
