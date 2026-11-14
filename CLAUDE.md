@@ -15,12 +15,13 @@ make setup        # install uv, dependencies and git hooks
 make run          # run the API locally with hot reload
 make test         # all tests with coverage (fails under 80%)
 make test-unit    # only the fast unit tests
-make hooks        # all quality checks: ruff, mypy, bandit, vulture, xenon, import-linter, suppressions, pip-audit
+make hooks        # all quality checks: ruff, mypy, bandit, vulture, xenon, import-linter, deptry, suppressions, pip-audit
 make smoke        # boots the real API and calls /health and /ready
 make contract     # boots the real API and runs Schemathesis against its OpenAPI schema
 make openapi-diff # fails on breaking OpenAPI changes vs BASE (default origin/main); needs oasdiff
 make risk-labels  # create/update the risk:<level> labels on GitHub
 make lint-imports # architecture contracts (import-linter)
+make deptry       # declared dependencies: every import declared, every dependency used
 make mutation     # mutation testing of the whole domain (slow; weekly in CI)
 make mutation-changed # mutation testing of only the domain files changed vs BASE (default origin/main); runs on every PR
 make suppressions # suppression ratchet: fails when noqa/type: ignore/nosec/skip... differ from the baseline
