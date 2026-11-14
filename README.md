@@ -9,10 +9,10 @@ A FastAPI template for Python 3.14 with a layered architecture (domain, infra, p
 
 ## Getting started
 
-Needs Docker only for `make dev`, and Node.js for `make jscpd` (installs the jscpd pinned in `package-lock.json`).
+Needs Docker only for `make dev`.
 
 ```sh
-make setup   # uv, Python 3.14, dependencies, .env, Node dev tools and git hooks
+make setup   # uv, Python 3.14, dependencies, .env and git hooks
 make run     # API at http://localhost:8000 (docs at /docs); or `make dev` with Docker
 make labels  # once per repository: the risk:<level> and deploy:<kind> PR labels (needs gh)
 ```

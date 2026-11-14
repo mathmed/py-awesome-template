@@ -12,8 +12,6 @@ setup:
 	@echo ">> uv: $$(uv --version)"
 	uv sync
 	@[ -f .env ] || { cp .env.example .env && echo ">> created .env from .env.example"; }
-	@if command -v npm >/dev/null 2>&1; then $(MAKE) --no-print-directory node_modules/.package-lock.json; \
-		else echo ">> npm not found: install Node.js to run make jscpd"; fi
 	uv run pre-commit install
 
 # Start project in development mode (docker)
@@ -72,13 +70,9 @@ lint-imports:
 deptry:
 	uv run deptry .
 
-# Detect duplicated code in app/ with jscpd (config in .jscpd.json, version pinned in package-lock.json)
-jscpd: node_modules/.package-lock.json
-	npx --no-install jscpd
-
-# npm writes node_modules/.package-lock.json on every install: reinstall only when the lockfile changes
-node_modules/.package-lock.json: package.json package-lock.json
-	npm ci --no-audit --no-fund
+# Detect duplicated code in app/ with jscpd (config in .jscpd.json, version pinned in uv.lock)
+jscpd:
+	uv run jscpd
 
 # Mutation testing of the whole domain (slow, see README); results: make mutation-results
 mutation:

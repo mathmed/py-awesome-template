@@ -22,6 +22,7 @@ dev = [
     "faker>=40.39.0",
     "httpx2>=2.13.1",
     "import-linter>=2.15",
+    "jscpd>=5.4.3",
     "mutmut>=3.8.0",
     "mypy>=2.3.1",
     "pip-audit>=2.10.1",

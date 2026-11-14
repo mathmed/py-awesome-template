@@ -52,7 +52,7 @@ repos:
 
       - id: jscpd
         name: jscpd (duplicated code)
-        entry: make --no-print-directory jscpd
+        entry: uv run jscpd
         language: system
         types: [python]
         pass_filenames: false

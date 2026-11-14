@@ -690,6 +690,21 @@ wheels = [
 ]
 
 [[package]]
+name = "jscpd"
+version = "5.4.3"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/89/b0/a4a1d3cd5922164779ea6cf974107c1bea0aad76cfe4e3ed761e94e15cde/jscpd-5.4.3-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:9e84956fbeb8bdfc6857cc88ae714a028af5e17e14607965a68f84c973f56b93", size = 18383791, upload-time = "2026-11-08T06:52:37.937Z" },
+    { url = "https://files.pythonhosted.org/packages/59/8b/3cd4c0e949f6fb7859c5bbd3839a47ab3a9c1d63bb705bc56756b0ba8c39/jscpd-5.4.3-py3-none-macosx_11_0_arm64.whl", hash = "sha256:1d054986145a7b4e4fb6ac40ebd6747eeef38313391fec2e79bee75cdf7bad8b", size = 17661267, upload-time = "2026-11-08T06:52:40.55Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/d8/ecd18c6eae51453fc36add7e133df650e1c8fb778a64ad3ba6de7af88449/jscpd-5.4.3-py3-none-manylinux_2_34_aarch64.whl", hash = "sha256:915b5db5d98898e722fdbd5d0e82d525263a0f73171f33467577e9e8d4a56367", size = 19228085, upload-time = "2026-11-08T06:52:42.765Z" },
+    { url = "https://files.pythonhosted.org/packages/33/f0/64f0fd5bb8141a663309cf9e3d12bcae49fd6139e38781a55106944e334c/jscpd-5.4.3-py3-none-manylinux_2_34_x86_64.whl", hash = "sha256:bdb173c425aa8f887ab6176981197760b74c68fe9df623f9d672b652676299cc", size = 20267513, upload-time = "2026-11-08T06:52:45.392Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/69/bec041affa26b45a9e68468d6a75414d1f6452f4963cadeb4ef923671005/jscpd-5.4.3-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:6f82f17cec63f76cf209db1d58191fe06b2b15675609b605eaa8de44be6275b3", size = 19085899, upload-time = "2026-11-08T06:52:47.754Z" },
+    { url = "https://files.pythonhosted.org/packages/53/e7/f923c58d7e14e542b093ef5e848eeea994851b10d03538803e6208ef72f7/jscpd-5.4.3-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:461ccad74f63011ca722ba59507aac2138bc6f7326c47de63709fd76839bbcb1", size = 20606285, upload-time = "2026-11-08T06:52:49.99Z" },
+    { url = "https://files.pythonhosted.org/packages/90/cc/0def11820ca4a36c2c77c6b17523e627daca14c008cef397929200af8236/jscpd-5.4.3-py3-none-win_amd64.whl", hash = "sha256:5390ebf04c22a6ae173b58a0a760c82b0d2c571541de64773237a5329910557b", size = 17922200, upload-time = "2026-11-08T06:52:52.306Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/96/15575b0f4b409187991c8cc37774ea64a8ee8ec484c21cdfca01846be6f1/jscpd-5.4.3-py3-none-win_arm64.whl", hash = "sha256:9d66b2e6ea46b90392ffd591541796c6038574f843ce5b0167727ce9605028a9", size = 17019843, upload-time = "2026-11-08T06:52:54.501Z" },
+]
+
+[[package]]
 name = "jsonschema-rs"
 version = "0.58.6"
 source = { registry = "https://pypi.org/simple" }
@@ -1246,6 +1261,7 @@ dev = [
     { name = "faker" },
     { name = "httpx2" },
     { name = "import-linter" },
+    { name = "jscpd" },
     { name = "mutmut" },
     { name = "mypy" },
     { name = "pip-audit" },
@@ -1275,6 +1291,7 @@ dev = [
     { name = "faker", specifier = ">=40.39.0" },
     { name = "httpx2", specifier = ">=2.13.1" },
     { name = "import-linter", specifier = ">=2.15" },
+    { name = "jscpd", specifier = ">=5.4.3" },
     { name = "mutmut", specifier = ">=3.8.0" },
     { name = "mypy", specifier = ">=2.3.1" },
     { name = "pip-audit", specifier = ">=2.10.1" },
