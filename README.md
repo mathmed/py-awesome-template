@@ -17,7 +17,7 @@ A production-ready starting point for Python 3.14 APIs with FastAPI: a layered f
 - **CI**: every pull request runs all checks and posts a single **Quality Report** comment with the result of every analysis (see [Quality Report](#quality-report)).
 - **Dependabot**: weekly grouped updates for Python dependencies and GitHub Actions.
 - **Production basics**: typed settings ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)), JSON logs in production, configurable CORS, domain errors mapped to HTTP status codes and `/health` (liveness) and `/ready` (readiness) routes.
-- **Deterministic validation for AI-generated code**: a boot smoke test, API contract tests (Schemathesis), breaking-change detection on the OpenAPI schema (oasdiff), architecture contracts, mutation testing, a suppression ratchet and a required risk label on every PR (see [Validation layers](#validation-layers)).
+- **Deterministic validation for AI-generated code**: a boot smoke test, API contract tests (Schemathesis), breaking-change detection on the OpenAPI schema (oasdiff), architecture contracts, mutation testing, a suppression ratchet and a required risk and deploy label on every PR (see [Validation layers](#validation-layers)).
 - **Docker**: a `dev` stage with hot reload and a slim, non-root `production` stage with healthcheck.
 - **AI-ready**: `CLAUDE.md`/`AGENTS.md` with the project rules, Claude Code agents (`coder`, `pr-writer`, `reviewer`), a PR template built for fast review, permissions and a hook that formats every file the agent edits.
 
@@ -58,6 +58,7 @@ curl "http://localhost:8000/example?field1=hello"
 | `make suppressions-update` | Lower the suppression baseline after removing suppressions.     |
 | `make check-code`  | Lint and check formatting with ruff.                                    |
 | `make format-code` | Fix lint issues and format the code with ruff.                          |
+| `make labels`      | Create or update the `risk:<level>` and `deploy:<kind>` labels on GitHub (needs `gh`); `make deploy-labels` creates only the deploy ones. |
 
 ### Dependencies
 
@@ -175,13 +176,26 @@ Comments are read with `tokenize` and tests with `ast`, so the same text inside 
 
 It runs as a pre-commit hook, in `make hooks` and as the `suppressions` CI job. Configuration that disables checks globally (`pyproject.toml`, `.pre-commit-config.yaml`, the workflows) is not counted here: the `pr-writer` agent always names a changed gate in the PR summary, so a reviewer sees when a gate changes.
 
-### Risk label
+### PR labels
 
-Every PR carries exactly one `risk:low`, `risk:medium`, `risk:high` or `risk:critical` label, assigned by the `pr-writer` agent when it opens the PR (see [Pull request flow](#pull-request-flow)). The level is a judgement about what the change can break, not a function of the files it touches: most PRs are `low` or `medium`, so `high` and `critical` stand out (rubric in `.claude/agents/pr-writer.md`). Before choosing `high` or `critical`, the agent reads the **Critical surfaces** section of `CLAUDE.md`, the list of places where a failure is hardest to undo. It ships as a placeholder with generic examples: a repository derived from this template must replace it with its own surfaces after reading its code.
+Every PR carries exactly one `risk:<level>` and exactly one `deploy:<kind>` label, assigned by the `pr-writer` agent when it opens the PR (see [Pull request flow](#pull-request-flow)). Both are judgements about the diff, not a function of the files it touches (rubrics in `.claude/agents/pr-writer.md`, summarized in `CLAUDE.md`, "Risk and deploy labels").
 
-The **Risk label** workflow (`.github/workflows/risk-label.yml`) runs `scripts/risk.py check` on every push and every label change and fails when the PR has no risk label, more than one, or an unknown one. It reads the labels from the API when it runs (not from the event that triggered it), and runs of the same PR queue instead of cancelling each other, so the final result applies to the current labels. It is a separate workflow so that changing a label does not re-run the whole CI, and for that reason it is not part of the Quality Report. The check does not require a specific reviewer's approval; merging stays with the owner.
+| Label | When |
+| --- | --- |
+| `risk:low` | No observable behavior changes: docs, tests, CI, formatting, dependency patch or minor bumps, refactors covered by tests. |
+| `risk:medium` | New or changed behavior, contained, and a revert recovers everything. |
+| `risk:high` | Changes a flow already in production that people or money go through, breaks a public contract or changes existing data. The risk sentence must name the flow. |
+| `risk:critical` | High, plus a revert does not undo it (data deleted, message sent, money moved), data leaks or the recovery path goes down. Only on a **Critical surface** of `CLAUDE.md`, changing behavior there. |
+| `deploy:none` | Nothing beyond the merge. |
+| `deploy:simple` | An environment variable, secret or flag. |
+| `deploy:migration` | Runs a migration, in order. |
+| `deploy:coordinated` | Depends on another PR or repository, or needs a schedule, queue or service paused. |
 
-Create the labels once with `make risk-labels` (idempotent: `gh label create --force`). Dependabot PRs are born `risk:low` through `labels` in `.github/dependabot.yaml`; relabel a major bump by hand when it changes behavior.
+The risk answers three questions: what breaks, for whom, and does a revert undo it? A change behind a flag that is off goes one level lower, and a doubt between two levels picks the lower one. High and critical are rare by design (about 85% of PRs low or medium, up to ~12% high, under 2% critical): if everything is high or critical, nothing is. Deploy steps do not raise the risk; they set the `deploy:<kind>` label, and a PR with a Deploy section is never `deploy:none`. Before choosing `high` or `critical`, the agent reads the **Critical surfaces** section of `CLAUDE.md`, the list of places where a failure is hardest to undo. It ships as a placeholder with generic examples: a repository derived from this template must replace it with its own surfaces after reading its code.
+
+The **PR labels** workflow (`.github/workflows/pr-labels.yml`, job `pr-labels`; formerly `risk-label.yml`, job `risk-label`) runs `scripts/pr_labels.py check` on every push and every label change and fails, with one line per problem, when the PR has no risk or deploy label, more than one of either, or an unknown one. It reads the labels from the API when it runs (not from the event that triggered it), and runs of the same PR queue instead of cancelling each other, so the final result applies to the current labels. It is a separate workflow so that changing a label does not re-run the whole CI, and for that reason it is not part of the Quality Report. The check does not require a specific reviewer's approval; merging stays with the owner. A branch protection rule that required the old `risk-label` check must require `pr-labels` instead.
+
+Create the labels once with `make labels` (idempotent: `gh label create --force`; `make risk-labels` still creates only the risk ones). Dependabot PRs are born `risk:low` and `deploy:none` through `labels` in `.github/dependabot.yaml`; relabel a major bump by hand when it changes behavior.
 
 ## Quality Report
 
@@ -257,7 +271,7 @@ The template is ready for coding agents such as [Claude Code](https://docs.claud
 
 - **`CLAUDE.md`** (also `AGENTS.md`, a symlink read by Cursor, Codex and others): architecture rules, commands and the checklist every change must pass before a PR.
 - **`.claude/agents/coder.md`**: implements a task on a `claude/<slug>` branch, with tests, runs all checks, commits, pushes and leaves handoff notes. It opens the PR itself only as a fallback.
-- **`.claude/agents/pr-writer.md`**: reads the pushed branch cold, commit by commit, fills the PR template, assigns the risk level, opens the PR with its `risk:<level>` label and stops. Never writes code, never merges.
+- **`.claude/agents/pr-writer.md`**: reads the pushed branch cold, commit by commit, fills the PR template, assigns the risk level and the deploy kind, opens the PR with its `risk:<level>` and `deploy:<kind>` labels and stops. Never writes code, never merges.
 - **`.claude/agents/reviewer.md`**: read-only review of a branch against the project rules.
 - **`.claude/settings.json`**: allows the common commands (uv, make, read-only git, gh), denies destructive ones (`rm -rf`, force push, hard reset, reading `.env`) and runs `.claude/hooks/ruff.sh` after every edit, formatting the file and sending unfixable lint errors back to the agent.
 
@@ -268,18 +282,24 @@ Create an empty `.local_dev` file at the root to work directly on your local bra
 Reading AI-written diffs is the bottleneck, so the PR description tells the reviewer how much attention the PR deserves and what changed in behavior and in rules, written by an agent that did not write the code:
 
 1. **`coder`** implements on a branch, runs every check, commits one logical step per commit, pushes and writes **handoff notes** to `.handoff/<branch>.md` (gitignored): the task verbatim, what was done and why, decisions, deploy notes and an explicit **Not verified** list. It does not open the PR or assess the risk.
-2. **`pr-writer`** (Opus) gets the task, the branch and the notes. It reads the diff cold, commit by commit, checks every claim against the diff and the tests and reconciles them with the notes, then fills `.github/pull_request_template.md` with a short body (target 1,500 characters, hard cap 2,500) where no fact repeats:
-   - **Summary**: 1-2 sentences on what changes and why, standing alone. Its last sentence says what was not verified, only when that matters;
-   - **one visual**, picked by the type of change, or none when the summary says it all: a `What | Before | After` table (at most 3 rows, plain words) for a rule or behavior change, a small Mermaid diagram for a flow or state change, a before/after values table for numbers or limits, or a `diff` block of at most 15 lines for a contract or configuration change;
-   - **Deploy**: one line, only when there is a real step (migration, env var or secret, flag, merge order, external config).
+2. **`pr-writer`** (Opus) gets the task, the branch and the notes. It reads the diff cold, commit by commit, checks every claim against the diff and the tests and reconciles them with the notes, then fills `.github/pull_request_template.md` with a short body (target 1,200 characters, hard cap 2,500) where no fact repeats and every section without content is omitted (no "None" or "N/A"):
+   - **📝 Summary**: at most 50 words on what the PR does and why it exists, standing alone. Its last sentence says what was not verified, only when that changes the reviewer's decision;
+   - **🔄 Behavior**: a `| | Before | After |` table in plain words, or a small Mermaid diagram for a flow or a `diff` block for a contract when the table does not fit; never more than one visual;
+   - **🚀 Deploy**: a checklist (`- [ ] ...`) of the real steps, in order (run a migration, merge another PR first, set an env var, redeploy a service);
+   - **Risk alert**: only when the risk is worth flagging, a `> [!WARNING]` (or `> [!CAUTION]` for critical) of at most 50 words starting with `Risk:` and naming what can break and for whom.
 
-   The risk lives only in the `risk:<level>` label. It assigns the level itself by judgement, defaulting to `low` (no behavior change: docs, tests, CI, dependency patch or minor bumps, refactors covered by tests) or `medium` (new behavior, a new endpoint or option, or any deploy step). `high` is for changes that can break production or change existing behavior drastically but are recoverable by revert; `critical` for failures that take down what users or money depend on, leak data or cut the only way to recover. High and critical need one concrete sentence naming what can break, written as the first line of the body, otherwise the level is lowered; touching pipeline files is not by itself a reason for `high`. A **Mismatch** line appears only when the diff contradicts the handoff notes, and a stacked-PR line only when the PR is stacked.
-
-   It opens the PR with the `risk:<level>` label (creating the labels if missing) and stops.
-3. **Fallback**: if `pr-writer` fails, `coder` opens the PR with a minimal body (summary, risk "unassessed", deploy line if any, no label), so a failure never blocks delivery; the [Risk label](#risk-label) check stays red until a person sets the label.
-4. **Merge**: only the owner merges. The Quality Report comment and the Risk label check run on every PR.
+   A stacked-PR line (`Stacked on #N; merge it first.`) goes at the top only when the PR is stacked, and a **Mismatch** line at the end only when the diff contradicts the handoff notes. There is no attribution footer. It assigns the `risk:<level>` and `deploy:<kind>` labels by the rubrics in [PR labels](#pr-labels), opens the PR with both (creating the labels if missing) and stops.
+3. **Fallback**: if `pr-writer` fails, `coder` opens the PR with a minimal body (summary, risk "unassessed", Deploy checklist if any) and the `deploy:<kind>` label but no risk label, so a failure never blocks delivery; the [PR labels](#pr-labels) check stays red until a person sets the risk label.
+4. **Merge**: only the owner merges. The Quality Report comment and the PR labels check run on every PR.
 
 People opening PRs by hand get the same template from GitHub.
+
+### Porting the PR flow to another language
+
+Repositories that replicate this design in another language (for example Portuguese) translate only the text people read, and keep everything machines match in English:
+
+- **Translate**: the section headings and guidance comments of `.github/pull_request_template.md` (keep the emojis and the order), the word `Risk:` that opens the risk alert, the fixed lines `Stacked on #N; merge it first.` and `**Mismatch:**`, the matching strings quoted in `.claude/agents/pr-writer.md` (steps 5 to 8) and in the fallback body of `.claude/agents/coder.md`, and the label descriptions in the `risk-labels` and `deploy-labels` targets of the `Makefile`.
+- **Keep as is**: the label names (`risk:<level>`, `deploy:<kind>`) and colors, `scripts/pr_labels.py` and its messages, the workflow and job names (`PR labels`, `pr-labels`), the GitHub alert keywords (`[!WARNING]`, `[!CAUTION]`) and the Conventional Commits types in PR titles.
 
 > [!NOTE]
 > The **Personal preferences** section of `CLAUDE.md` holds the template author's own taste (no docstrings, `StrEnum` for fixed strings, latest dependency versions, etc.). They are not part of the architecture — change or remove them to match yours.
@@ -301,12 +321,12 @@ People opening PRs by hand get the same template from GitHub.
 | `scripts/quality_report.py`  | Runs analyses as CI fragments and renders the single Quality Report.    |
 | `scripts/suppressions.py`    | Suppression ratchet (`make suppressions`).                              |
 | `suppressions-baseline.json` | Committed suppression counts per file and kind.                         |
-| `scripts/risk.py`            | Risk label check: exactly one known `risk:<level>` label.               |
-| `.github/workflows/risk-label.yml` | Fails PRs without exactly one known risk label.                   |
+| `scripts/pr_labels.py`       | PR labels check: exactly one known `risk:<level>` and one known `deploy:<kind>` label. |
+| `.github/workflows/pr-labels.yml` | Fails PRs without exactly one known risk label and one known deploy label. |
 | `.env.example`               | Environment variables template.                                         |
 | `.github/workflows/ci.yml`   | CI pipeline: one job per analysis plus the `quality-report` job.        |
 | `.github/dependabot.yaml`    | Dependency updates.                                                     |
-| `.github/pull_request_template.md` | PR description structure: summary, one visual, deploy line.     |
+| `.github/pull_request_template.md` | PR description structure: summary, behavior, deploy checklist, risk alert. |
 | `.vscode/settings.json`      | Ruff format on save and pytest integration.                             |
 | `CLAUDE.md` / `AGENTS.md`    | Instructions for AI coding agents.                                      |
 | `.claude/`                   | Claude Code agents, permissions and hooks.                              |
