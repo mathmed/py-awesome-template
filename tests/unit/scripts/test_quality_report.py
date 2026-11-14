@@ -16,6 +16,7 @@ from scripts.quality_report import (
     analyze_bandit,
     analyze_deptry,
     analyze_import_linter,
+    analyze_jscpd,
     analyze_mutation,
     analyze_oasdiff,
     analyze_pip_audit,
@@ -152,6 +153,34 @@ info\t[endpoint-added] at head.openapi.json
 \tin API GET /items
 \t\tendpoint added
 """
+JSCPD_TABLE = """┌────────┬────────────────┬─────────────┬──────────────┬──────────────┬──────────────────┬───────────────────┐
+│ Format │ Files analyzed │ Total lines │ Total tokens │ Clones found │ Duplicated lines │ Duplicated tokens │
+├────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤
+│ python │ 12             │ 268         │ 1312         │ {clones}            │ {lines} ({percentage}%)        │ 0 (0.00%)         │
+├────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤
+│ Total: │ 12             │ 268         │ 1312         │ {clones}            │ {lines} ({percentage}%)        │ 0 (0.00%)         │
+└────────┴────────────────┴─────────────┴──────────────┴──────────────┴──────────────────┴───────────────────┘
+"""
+JSCPD_OK = (
+    "Using config from .jscpd.json\nNo duplicates found.\n"
+    + JSCPD_TABLE.format(clones=0, lines=0, percentage="0.00")
+    + "Found 0 clones.\ntime: 11.778ms\n"
+)
+JSCPD_CLONES = (
+    """Using config from .jscpd.json
+Clone found (python)
+ - app/domain/a.py [1:1 - 10:17] (10 lines, 50 tokens)
+   app/domain/b.py [3:5 - 12:17]
+Clone found (python)
+ - app/infra/c.py [20:1 - 31:9] (12 lines, 64 tokens)
+   app/infra/sub/d.py [40:1 - 51:9]
+"""
+    + JSCPD_TABLE.format(clones=2, lines=22, percentage="7.59")
+    + """Found 2 clones.
+ERROR: jscpd found too many duplicates (7.6%) over threshold (0.0%)
+time: 2.953ms
+"""
+)
 OASDIFF_INFO_ONLY = """1 change: 0 error, 0 warning, 1 info
 info\t[endpoint-added] at head.openapi.json
 \tin API GET /items
@@ -197,6 +226,7 @@ def all_ok_fragments() -> dict[Analysis, Fragment]:
         Analysis.SUPPRESSIONS: SUPPRESSIONS_OK,
         Analysis.SCHEMATHESIS: SCHEMATHESIS_OK,
         Analysis.OASDIFF: OASDIFF_NO_CHANGES,
+        Analysis.JSCPD: JSCPD_OK,
     }
     return {analysis: fragment(analysis, outputs.get(analysis, "")) for analysis in Analysis}
 
@@ -491,6 +521,88 @@ class TestMutation:
         assert "CalledProcessError" in finding.details
 
 
+class TestJscpd:
+    def test_should_summarize_no_clones_in_one_line(self) -> None:
+        finding = analyze_jscpd(fragment(Analysis.JSCPD, JSCPD_OK))
+
+        assert finding.status == Status.OK
+        assert finding.summary == "0 clones · 0.00% duplicated"
+        assert finding.details == ""
+
+    def test_should_list_every_clone_with_files_and_lines(self) -> None:
+        finding = analyze_jscpd(fragment(Analysis.JSCPD, JSCPD_CLONES, 1))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == "2 clones · 7.59% duplicated"
+        assert finding.is_markdown
+        assert finding.details.splitlines()[:2] == [
+            "- `app/domain/a.py:1-10` ↔ `app/domain/b.py:3-12` (10 lines, 50 tokens)",
+            "- `app/infra/c.py:20-31` ↔ `app/infra/sub/d.py:40-51` (12 lines, 64 tokens)",
+        ]
+        assert "**Fix**: extract the duplicated block" in finding.details
+
+    def test_should_use_the_singular_for_one_clone(self) -> None:
+        output = JSCPD_CLONES.replace("Found 2 clones.", "Found 1 clone.")
+
+        assert analyze_jscpd(fragment(Analysis.JSCPD, output, 1)).summary.startswith("1 clone ·")
+
+    def test_should_cap_the_listed_clones(self) -> None:
+        clone = "Clone found (python)\n - app/a.py [1:1 - 9:1] (9 lines, 60 tokens)\n   app/b.py [1:1 - 9:1]\n"
+        output = clone * (quality_report.MAX_CLONES_LISTED + 2) + JSCPD_CLONES
+
+        finding = analyze_jscpd(fragment(Analysis.JSCPD, output, 1))
+
+        assert finding.details.count("- `app/a.py:1-9`") == quality_report.MAX_CLONES_LISTED
+        assert "... and 4 more. Run `make jscpd` for the full list." in finding.details
+
+    def test_should_show_the_raw_output_when_the_clones_cannot_be_parsed(self) -> None:
+        output = JSCPD_TABLE.format(clones=1, lines=5, percentage="1.00") + "Found 1 clone.\n"
+
+        finding = analyze_jscpd(fragment(Analysis.JSCPD, output, 1))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == "1 clone · 1.00% duplicated"
+        assert not finding.is_markdown
+        assert "Found 1 clone." in finding.details
+
+    def test_should_fail_when_the_tool_errors(self) -> None:
+        finding = analyze_jscpd(fragment(Analysis.JSCPD, "Error: path does not exist: app", 1))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == "jscpd failed before reporting"
+        assert finding.details == "Error: path does not exist: app"
+
+    def test_should_fail_on_empty_output_with_an_error_exit(self) -> None:
+        finding = analyze_jscpd(fragment(Analysis.JSCPD, "", 127))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == "jscpd failed before reporting"
+
+    def test_should_pass_on_empty_output_with_a_success_exit(self) -> None:
+        finding = analyze_jscpd(fragment(Analysis.JSCPD, ""))
+
+        assert finding.status == Status.OK
+        assert finding.summary == "no clones"
+
+    def test_should_open_the_clones_and_the_reproduce_command_in_the_report(self) -> None:
+        fragments = all_ok_fragments() | {Analysis.JSCPD: fragment(Analysis.JSCPD, JSCPD_CLONES, 1)}
+
+        report = render(fragments, {}, baseline=NO_BASELINE)
+
+        problem = report.split("### ❌ Duplication (jscpd)", 1)[1].split("| Area |", 1)[0]
+        assert "2 clones · 7.59% duplicated" in problem
+        assert "`app/infra/c.py:20-31` ↔ `app/infra/sub/d.py:40-51`" in problem
+        assert "**Reproduce**: `make jscpd`" in problem
+        assert "|  | Duplication (jscpd) | ❌ | 2 clones · 7.59% duplicated |" in report
+
+    def test_should_show_the_one_line_detail_in_the_code_area_when_passing(self) -> None:
+        report = render(all_ok_fragments(), {}, baseline=NO_BASELINE)
+
+        assert "|  | Duplication (jscpd) | ✅ | 0 clones · 0.00% duplicated |" in report
+        section = next(s for s in quality_report.SECTIONS if s.analyses == (Analysis.JSCPD,))
+        assert (section.group, section.job) == (quality_report.Group.CODE, "duplication")
+
+
 class TestSuppressions:
     def test_should_share_the_result_prefix_with_the_producer(self) -> None:
         assert quality_report.SUPPRESSIONS_RESULT_PREFIX == suppressions.RESULT_PREFIX
@@ -679,7 +791,7 @@ class TestVerdict:
         report = render(all_ok_fragments(), {}, baseline=NO_BASELINE)
 
         assert report.startswith(f"{quality_report.MARKER}\n## Quality Report\n\n")
-        assert "> [!TIP]\n> ✅ 14 passed\n" in report
+        assert "> [!TIP]\n> ✅ 15 passed\n" in report
 
     def test_should_use_a_caution_alert_with_the_counts_when_something_failed(self) -> None:
         fragments = all_ok_fragments()
@@ -690,7 +802,7 @@ class TestVerdict:
 
         report = render(fragments, {}, baseline=NO_BASELINE)
 
-        assert "> [!CAUTION]\n> ❌ 1 failed · ✅ 12 passed · ⏭️ 1 skipped\n" in report
+        assert "> [!CAUTION]\n> ❌ 1 failed · ✅ 13 passed · ⏭️ 1 skipped\n" in report
 
     def test_should_use_a_warning_alert_when_only_warnings(self) -> None:
         fragments = all_ok_fragments()
@@ -698,7 +810,7 @@ class TestVerdict:
 
         report = render(fragments, {}, baseline=NO_BASELINE)
 
-        assert "> [!WARNING]\n> ⚠️ 1 warning · ✅ 13 passed\n" in report
+        assert "> [!WARNING]\n> ⚠️ 1 warning · ✅ 14 passed\n" in report
 
     def test_should_say_when_every_failure_is_inherited_from_the_base(self) -> None:
         fragments = all_ok_fragments()
@@ -708,7 +820,7 @@ class TestVerdict:
 
         report = render(fragments, {}, baseline=baseline)
 
-        assert "> ❌ 2 failed, all inherited from `main` · ✅ 12 passed\n" in report
+        assert "> ❌ 2 failed, all inherited from `main` · ✅ 13 passed\n" in report
 
     def test_should_count_inherited_failures_when_only_some_are(self) -> None:
         fragments = all_ok_fragments()
@@ -718,7 +830,7 @@ class TestVerdict:
 
         report = render(fragments, {}, baseline=baseline)
 
-        assert "> ❌ 2 failed (1 inherited from `main`) · ✅ 12 passed\n" in report
+        assert "> ❌ 2 failed (1 inherited from `main`) · ✅ 13 passed\n" in report
 
     def test_should_say_inherited_without_all_for_a_single_failure(self) -> None:
         fragments = all_ok_fragments()
@@ -726,7 +838,7 @@ class TestVerdict:
 
         report = render(fragments, {}, baseline=Baseline("develop", dict(fragments)))
 
-        assert "> ❌ 1 failed, inherited from `develop` · ✅ 13 passed\n" in report
+        assert "> ❌ 1 failed, inherited from `develop` · ✅ 14 passed\n" in report
 
 
 class TestProblems:
@@ -946,7 +1058,7 @@ class TestPassedDetails:
         report = render(all_ok_fragments(), {}, baseline=NO_BASELINE)
 
         assert report.count("<details>") == 1
-        assert "<details><summary>14 passed</summary>" in report
+        assert "<details><summary>15 passed</summary>" in report
         assert "**Tests and coverage (pytest)** · Coverage" in report
         assert "**Architecture contracts (import-linter)** · Contracts" in report
         assert "**Suppressions (ratchet)** · By kind" in report
@@ -959,7 +1071,7 @@ class TestPassedDetails:
 
         report = render(fragments, {}, baseline=NO_BASELINE)
 
-        passed = report[report.index("<details><summary>13 passed") :]
+        passed = report[report.index("<details><summary>14 passed") :]
         assert "Architecture contracts" not in passed
 
     def test_should_omit_the_block_when_no_passing_check_has_details(self) -> None:
