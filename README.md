@@ -12,7 +12,7 @@ A production-ready starting point for Python 3.14 APIs with FastAPI: a layered f
 ## Features
 
 - **Layered structure**: domain, infra and presentation layers, with the domain isolated from frameworks through contracts.
-- **Quality tooling**: ruff (lint + format), mypy (types), bandit (security), vulture (dead code), xenon (complexity), import-linter (architecture contracts) and pip-audit (vulnerable dependencies), all in [pre-commit](https://pre-commit.com/) hooks.
+- **Quality tooling**: ruff (lint + format), mypy (types), bandit (security), vulture (dead code), xenon (complexity), import-linter (architecture contracts), deptry (declared dependencies) and pip-audit (vulnerable dependencies), all in [pre-commit](https://pre-commit.com/) hooks.
 - **Tests**: pytest with unit and integration suites and an 80% coverage gate.
 - **CI**: every pull request runs all checks and posts a single **Quality Report** comment with the result of every analysis (see [Quality Report](#quality-report)).
 - **Dependabot**: weekly grouped updates for Python dependencies and GitHub Actions.
@@ -46,12 +46,13 @@ curl "http://localhost:8000/example?field1=hello"
 | `make build`       | Build the production Docker image.                                      |
 | `make test`        | Run all tests with coverage.                                            |
 | `make test-unit`   | Run only the unit tests.                                                |
-| `make hooks`       | Run all quality checks (ruff, mypy, bandit, vulture, xenon, import-linter, suppressions, pip-audit). |
+| `make hooks`       | Run all quality checks (ruff, mypy, bandit, vulture, xenon, import-linter, deptry, suppressions, pip-audit). |
 | `make smoke`       | Boot the real API and call `/health` and `/ready`.                      |
 | `make contract`    | Boot the real API and run Schemathesis against its OpenAPI schema.      |
 | `make openapi-diff` | Fail on breaking OpenAPI changes against `BASE` (default `origin/main`). |
 | `make risk-labels` | Create or update the `risk:<level>` labels on GitHub (needs `gh`).      |
 | `make lint-imports` | Check the architecture contracts (import-linter).                      |
+| `make deptry`      | Check that every import is declared and every dependency is used (deptry). |
 | `make mutation`    | Mutation testing of the domain (slow); `make mutation-results` lists survivors. |
 | `make suppressions` | Fail when the suppressions differ from `suppressions-baseline.json`.   |
 | `make suppressions-update` | Lower the suppression baseline after removing suppressions.     |
@@ -191,6 +192,7 @@ Every pull request gets **one** comment (marker `<!-- quality-report -->`, updat
 | Lint/format | ruff check + format | `lint` | problem / file count; output on failure |
 | Types | mypy (strict) | `types` | files checked or error count |
 | Security | bandit + pip-audit | `security` | issues and vulnerable dependencies |
+| Dependencies | deptry | `dependencies` | dependency issues (undeclared imports, unused dependencies) |
 | Dead code | vulture | `dead-code` | items found (⚠️, advisory: does not block) |
 | Complexity | xenon | `complexity` | blocks above the threshold |
 | Suppressions | `scripts/suppressions.py` | `suppressions` | total vs. baseline; new or removed suppressions by file, kind and line |
@@ -286,7 +288,7 @@ People opening PRs by hand get the same template from GitHub.
 
 | File                         | Description                                                             |
 | ---------------------------- | ----------------------------------------------------------------------- |
-| `pyproject.toml`             | Dependencies and ruff, mypy, pytest, coverage, vulture, xenon, import-linter and mutmut config. |
+| `pyproject.toml`             | Dependencies and ruff, mypy, pytest, coverage, vulture, xenon, deptry, import-linter and mutmut config. |
 | `uv.lock`                    | Locked dependency versions.                                             |
 | `.python-version`            | Python version used by uv.                                              |
 | `.pre-commit-config.yaml`    | Git hooks running all quality checks.                                   |

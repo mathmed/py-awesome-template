@@ -1,7 +1,7 @@
 # Base branch used by mutation-changed and openapi-diff
 BASE ?= origin/main
 
-.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code smoke lint-imports mutation mutation-changed mutation-results suppressions suppressions-update contract openapi-diff risk-labels
+.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code smoke lint-imports deptry mutation mutation-changed mutation-results suppressions suppressions-update contract openapi-diff risk-labels
 
 # Install uv (if missing), project dependencies and git hooks
 setup:
@@ -38,7 +38,7 @@ test:
 test-unit:
 	uv run pytest tests/unit
 
-# Run all quality checks (ruff, mypy, bandit, vulture, xenon, import-linter, suppressions, pip-audit)
+# Run all quality checks (ruff, mypy, bandit, vulture, xenon, import-linter, deptry, suppressions, pip-audit)
 hooks:
 	uv run pre-commit run --all-files
 
@@ -65,6 +65,10 @@ openapi-diff:
 # Check the architecture contracts in pyproject.toml ([tool.importlinter])
 lint-imports:
 	uv run lint-imports
+
+# Check that every import is declared and every dependency is used
+deptry:
+	uv run deptry .
 
 # Mutation testing of the whole domain (slow, see README); results: make mutation-results
 mutation:
