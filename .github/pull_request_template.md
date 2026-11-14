@@ -1,14 +1,29 @@
-<!-- High or critical risk only, as the first line: Risk high: <what can break, for whom>. Otherwise the
-risk lives only in the risk:<level> label. Stacked PRs only: Stacked on #<number>; merge it first. -->
-## Summary
-<1-2 sentences: what changes and why. Must stand alone. End with what was not verified, only if it matters.>
+<!-- Every section is optional: delete a section that has no content (never write "None" or "N/A").
+Stacked PRs only, as the first line: Stacked on #<number>; merge it first. -->
 
-<!-- ONE visual, picked by the type of change, or none when the summary says it all:
-rule or behavior: What | Before | After table (max 3 rows, 12 words per cell); flow or state: small Mermaid
-diagram; numbers or limits: before/after values table; contract or config: diff block of max 15 lines. -->
-| What | Before | After |
-| ---- | ------ | ----- |
-| <rule, in plain words> | <before> | <after> |
+<!-- Only when the risk is worth flagging (usually high; CAUTION for critical), max 50 words:
+> [!WARNING]
+> Risk: <one concrete sentence: what can break, for whom>.
+-->
 
-<!-- Only with a real step (migration, env var or secret, flag, merge order, external config); else delete. -->
-**Deploy:** <the step; rollback only when it is not a plain revert>
+## 📝 Summary
+
+<!-- Max 50 words: what this PR does AND why it exists. Must stand alone. -->
+
+## 🔄 Behavior
+
+<!-- Concise; technical terms only when needed. A Mermaid flow or a diff block instead of the table only when
+the table does not fit; never more than one visual. -->
+| | Before | After |
+| --- | --- | --- |
+| <what> | <before> | <after> |
+
+## 🚀 Deploy
+
+<!-- Only with real steps, in order. Every PR also carries one deploy:<kind> label; with this section it is
+never deploy:none. -->
+- [ ] <step, e.g. run migration X, merge PR Y in repo Z first, merge this PR and redeploy service W>
+
+<!-- Only when the diff contradicts the handoff notes:
+**Mismatch:** <what the notes said> vs <what the diff does>
+-->

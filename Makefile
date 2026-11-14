@@ -90,9 +90,21 @@ suppressions:
 suppressions-update:
 	uv run python scripts/suppressions.py update
 
+.PHONY: labels deploy-labels
+
+# Create (or update) every PR label the PR labels check requires: risk:<level> and deploy:<kind>
+labels: risk-labels deploy-labels
+
 # Create (or update) the risk:<level> labels on the GitHub repository (needs an authenticated gh)
 risk-labels:
-	gh label create "risk:low" --color 0E8A16 --description "Low risk: no behavior change" --force
-	gh label create "risk:medium" --color FBCA04 --description "Medium risk: new behavior or a deploy step" --force
-	gh label create "risk:high" --color D93F0B --description "High risk: can break production, recoverable by revert" --force
-	gh label create "risk:critical" --color B60205 --description "Critical risk: hard to revert, users, money or data at stake" --force
+	gh label create "risk:low" --color 0E8A16 --description "Low risk: no observable behavior change" --force
+	gh label create "risk:medium" --color FBCA04 --description "Medium risk: contained change, a revert recovers it" --force
+	gh label create "risk:high" --color D93F0B --description "High risk: changes a named production flow, contract or data" --force
+	gh label create "risk:critical" --color B60205 --description "Critical risk: high and a revert does not undo it" --force
+
+# Create (or update) the deploy:<kind> labels on the GitHub repository (needs an authenticated gh)
+deploy-labels:
+	gh label create "deploy:none" --color BFBFBF --description "Deploy: nothing beyond the merge" --force
+	gh label create "deploy:simple" --color C5DEF5 --description "Deploy: env var, secret or flag" --force
+	gh label create "deploy:migration" --color F28C28 --description "Deploy: runs a migration, in order" --force
+	gh label create "deploy:coordinated" --color 7A0000 --description "Deploy: another PR or repo, or pause something" --force

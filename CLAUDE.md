@@ -27,6 +27,7 @@ make mutation-changed # mutation testing of only the domain files changed vs BAS
 make suppressions # suppression ratchet: fails when noqa/type: ignore/nosec/skip... differ from the baseline
 make suppressions-update # lower suppressions-baseline.json after removing suppressions (never raises it)
 make format-code  # fix lint issues and format with ruff
+make labels       # create/update the risk:<level> and deploy:<kind> labels on GitHub
 ```
 
 Always use `uv run` / `uv add` — never `pip` directly.
@@ -105,7 +106,8 @@ tests/integration/ HTTP tests with TestClient
 > own list, written after reading its code. Name the modules, routes or jobs, not generic categories.
 
 The parts of the system where a failure is hardest to undo. The `pr-writer` agent reads this list before
-labelling a PR `risk:high` or `risk:critical`; a change that touches none of them rarely is either.
+labelling a PR `risk:high` or `risk:critical` (see "Risk and deploy labels" below): a change that touches
+none of them is rarely high, and `critical` requires touching one of them and changing behavior there.
 
 - **Authentication and permissions**: who can sign in and what each caller is allowed to do.
 - **Money or irreversible data movement**: charges, payouts, transfers, deletions, messages sent to people.
@@ -119,16 +121,19 @@ labelling a PR `risk:high` or `risk:critical`; a change that touches none of the
    not open the PR and does not assess the risk. Never commit directly to `main`.
 2. **Describe and open**: then delegate to the `pr-writer` agent (`.claude/agents/pr-writer.md`) with the
    original task verbatim, the branch, the base branch and the path of the handoff notes. It reads the diff
-   cold, commit by commit, fills `.github/pull_request_template.md`, assigns the risk level by the rubric in
-   that file (most PRs low or medium; high or critical only with one concrete sentence naming what can
-   break; at least medium when there are deploy steps), opens the PR with the `risk:<level>` label and
-   stops. It never writes code. The body is short: a Summary of 1-2 sentences that stands alone, at most one
-   visual chosen by the type of change (a What/Before/After table, a Mermaid diagram, a values table or a
-   short diff), and a Deploy line only when there is a real step; the risk lives only in the label, plus one
-   top line for high or critical. Every claim is checked against the diff and the tests before it is written.
+   cold, commit by commit, fills `.github/pull_request_template.md`, assigns the risk level and the deploy
+   kind by the rubrics in that agent file (summary in "Risk and deploy labels" below), opens the PR with
+   exactly one `risk:<level>` and one `deploy:<kind>` label and stops. It never writes code. The body is
+   short (target 1,200 characters, cap 2,500) and every section is omitted when it has no content: a
+   `📝 Summary` of at most 50 words (what and why, standing alone), a `🔄 Behavior` visual (a
+   `| | Before | After |` table, or a Mermaid flow or diff block when the table does not fit), a `🚀 Deploy`
+   checklist of the real steps, and a `Risk:` alert (`[!WARNING]`, or `[!CAUTION]` for critical) only when
+   the risk is worth flagging. No attribution footer.
+   Every claim is checked against the diff and the tests before it is written.
 3. **Fallback**: if `pr-writer` fails or cannot run, delegate back to `coder` saying so: it opens the PR
-   itself with a minimal body (summary, risk "unassessed", deploy line if any, no risk label), so a
-   failure never blocks delivery. The Risk label check stays red until a person sets the label.
+   itself with a minimal body (summary, risk "unassessed", Deploy checklist if any) and the `deploy:<kind>`
+   label but no risk label, so a failure never blocks delivery. The PR labels check stays red until a person
+   sets the risk label.
 4. **Merge**: nobody but the owner merges. Agents never merge, approve or enable auto-merge.
 
 - **Exception**: if a `.local_dev` file exists at the repository root, the developer is working locally —
@@ -148,6 +153,33 @@ when they disagree. Sections, in this order:
 - `## Deploy notes`: new env vars or secrets, migrations and their order, flags, external configuration; or
   "None".
 - `## Not verified`: everything the author did not or could not check, and why; or "nothing".
+
+### Risk and deploy labels
+
+Every PR carries exactly one `risk:<level>` and exactly one `deploy:<kind>` label; the `PR labels` check
+(`scripts/pr_labels.py`) fails otherwise. Both are judgements on the diff, never a function of the files
+touched.
+
+- **Risk** answers three questions: what breaks, for whom, and does a revert undo it?
+  - `low`: no observable behavior changes (docs, tests, CI, formatting, dependency patch/minor bumps,
+    refactors covered by tests);
+  - `medium`: new or changed behavior, contained, and a revert recovers everything;
+  - `high`: changes a flow already in production that people or money go through (payment, authentication,
+    messages sent), breaks a public contract or changes existing data; the risk sentence names the flow,
+    otherwise the level is lowered;
+  - `critical`: high plus a revert that does not undo it (data deleted, message sent, money moved), a data
+    leak or a broken recovery path; only when it touches a **Critical surface** above and changes behavior
+    there.
+  - Lower one level behind a flag that is off; when in doubt between two levels, pick the lower. High and
+    critical are rare (about 85% low or medium, up to ~12% high, under 2% critical): if everything is high
+    or critical, nothing is. Deploy steps do not raise the risk.
+- **Deploy**: `deploy:none` (nothing beyond the merge), `deploy:simple` (env var, secret or flag),
+  `deploy:migration` (runs a migration, in order), `deploy:coordinated` (depends on another PR or
+  repository, or needs a schedule, queue or service paused). A PR with a Deploy section is never
+  `deploy:none`.
+- **Other languages**: a repository that ports this flow translates only the human-facing text (template
+  headings and comments, the `Risk:` alert word, the fixed lines, label descriptions) and keeps label names,
+  `scripts/pr_labels.py` and the check names in English (README, "Porting the PR flow to another language").
 
 ## Personal preferences
 

@@ -71,15 +71,23 @@ Only when you are told that `pr-writer` failed (or it cannot be run), open the P
 never blocked:
 
 1. `gh pr list --head <branch> --state open` — if a PR already exists, do not open another one.
-2. Open it with a minimal body in the shape of `.github/pull_request_template.md`:
-   `gh pr create --base main --head <branch> --title "<type>: <short description>" --body-file <file>`.
+2. Pick the `deploy:<kind>` label from the Deploy notes, the most demanding that applies: `deploy:none`
+   (nothing beyond the merge), `deploy:simple` (env var, secret or flag), `deploy:migration` (runs a
+   migration, with an order) or `deploy:coordinated` (depends on another PR or repository, or needs something
+   paused). A PR with a Deploy section is never `deploy:none`. Run `make labels` so the labels exist.
+3. Open it with a minimal body in the shape of `.github/pull_request_template.md`, omitting the Deploy
+   section when there is no step:
+   `gh pr create --base main --head <branch> --title "<type>: <short description>" --body-file <file>
+   --label "deploy:<kind>"`.
 
 ```markdown
-## Summary
-<1-2 sentences: what changes and why>. Risk unassessed: pr-writer failed, so review commit by commit and set
-the `risk:<level>` label. <The important Not verified items from the handoff notes, if any.>
+## 📝 Summary
+<max 50 words: what the PR does and why>. Risk unassessed: pr-writer failed, so review commit by commit and
+set the `risk:<level>` label. <A crucial Not verified item from the handoff notes, only if it changes the
+reviewer's decision.>
 
-**Deploy:** <the Deploy notes from the handoff notes; omit this line when there are none>
+## 🚀 Deploy
+- [ ] <each step from the Deploy notes, in order>
 ```
 
-Do not add a `risk:` label: the Risk label check stays red until the reviewer sets one. Return the PR URL.
+Do not add a `risk:` label: the PR labels check stays red until the reviewer sets one. Return the PR URL.
