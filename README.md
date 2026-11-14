@@ -3,346 +3,75 @@
 [![CI](https://github.com/mathmed/py-awesome-template/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mathmed/py-awesome-template/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/mathmed/py-awesome-template/python-coverage-comment-action-data/endpoint.json)](https://htmlpreview.github.io/?https://github.com/mathmed/py-awesome-template/blob/python-coverage-comment-action-data/htmlcov/index.html)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white)](https://www.python.org/)
-[![Checked with mypy](https://www.mypy-lang.org/static/mypy_badge.svg)](https://mypy-lang.org/)
-[![Security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 [![Dependabot](https://img.shields.io/badge/dependabot-enabled-025E8C?logo=dependabot)](.github/dependabot.yaml)
 
-A production-ready starting point for Python 3.14 APIs with FastAPI: a layered folder structure, modern tooling with [uv](https://docs.astral.sh/uv/) and [ruff](https://docs.astral.sh/ruff/), quality gates in pre-commit and CI, and Docker for development and production.
-
-## Features
-
-- **Layered structure**: domain, infra and presentation layers, with the domain isolated from frameworks through contracts.
-- **Quality tooling**: ruff (lint + format), mypy (types), bandit (security), vulture (dead code), xenon (complexity), import-linter (architecture contracts), deptry (declared dependencies) and pip-audit (vulnerable dependencies), all in [pre-commit](https://pre-commit.com/) hooks.
-- **Tests**: pytest with unit and integration suites and an 80% coverage gate.
-- **CI**: every pull request runs all checks and posts a single **Quality Report** comment: the verdict, what to fix with the command to reproduce it, and every analysis grouped by area (see [Quality Report](#quality-report)).
-- **Dependabot**: weekly grouped updates for Python dependencies and GitHub Actions.
-- **Production basics**: typed settings ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)), JSON logs in production, configurable CORS, domain errors mapped to HTTP status codes and `/health` (liveness) and `/ready` (readiness) routes.
-- **Deterministic validation for AI-generated code**: a boot smoke test, API contract tests (Schemathesis), breaking-change detection on the OpenAPI schema (oasdiff), architecture contracts, mutation testing, a suppression ratchet and a required risk and deploy label on every PR (see [Validation layers](#validation-layers)).
-- **Docker**: a `dev` stage with hot reload and a slim, non-root `production` stage with healthcheck.
-- **AI-ready**: `CLAUDE.md`/`AGENTS.md` with the project rules, Claude Code agents (`coder`, `pr-writer`, `reviewer`), a PR template built for fast review, permissions and a hook that formats every file the agent edits.
+A FastAPI template for Python 3.14 with a layered architecture (domain, infra, presentation), managed with [uv](https://docs.astral.sh/uv/), with deterministic quality gates built for AI-written code. Rules, architecture and agent workflow live in [`CLAUDE.md`](CLAUDE.md) (also `AGENTS.md`).
 
 ## Getting started
 
-```sh
-make setup   # installs uv if missing, dependencies (and Python 3.14), .env and git hooks
-make run     # starts the API at http://localhost:8000 (docs at /docs)
-```
-
-Or run it with Docker: `make dev` (the port is `APP_PORT` from `.env`).
+Needs Docker only for `make dev`.
 
 ```sh
-curl http://localhost:8000/health
-curl http://localhost:8000/ready
-curl "http://localhost:8000/example?field1=hello"
+make setup   # uv, Python 3.14, dependencies, .env and git hooks
+make run     # API at http://localhost:8000 (docs at /docs); or `make dev` with Docker
+make labels  # once per repository: the risk:<level> and deploy:<kind> PR labels (needs gh)
 ```
-
-### Commands
-
-| Command            | Description                                                             |
-| ------------------ | ----------------------------------------------------------------------- |
-| `make setup`       | Install uv, project dependencies and git hooks.                         |
-| `make run`         | Run the API locally with hot reload.                                    |
-| `make dev`         | Run the API with Docker (`make dev-build` to rebuild the image).        |
-| `make build`       | Build the production Docker image.                                      |
-| `make test`        | Run all tests with coverage.                                            |
-| `make test-unit`   | Run only the unit tests.                                                |
-| `make hooks`       | Run all quality checks (ruff, mypy, bandit, vulture, xenon, import-linter, deptry, suppressions, pip-audit). |
-| `make smoke`       | Boot the real API and call `/health` and `/ready`.                      |
-| `make contract`    | Boot the real API and run Schemathesis against its OpenAPI schema.      |
-| `make openapi-diff` | Fail on breaking OpenAPI changes against `BASE` (default `origin/main`). |
-| `make risk-labels` | Create or update the `risk:<level>` labels on GitHub (needs `gh`).      |
-| `make lint-imports` | Check the architecture contracts (import-linter).                      |
-| `make deptry`      | Check that every import is declared and every dependency is used (deptry). |
-| `make mutation`    | Mutation testing of the domain (slow); `make mutation-results` lists survivors. |
-| `make suppressions` | Fail when the suppressions differ from `suppressions-baseline.json`.   |
-| `make suppressions-update` | Lower the suppression baseline after removing suppressions.     |
-| `make check-code`  | Lint and check formatting with ruff.                                    |
-| `make format-code` | Fix lint issues and format the code with ruff.                          |
-| `make labels`      | Create or update the `risk:<level>` and `deploy:<kind>` labels on GitHub (needs `gh`); `make deploy-labels` creates only the deploy ones. |
-
-### Dependencies
-
-Use `uv add <package>` for production dependencies and `uv add --dev <package>` for development ones. Always commit `uv.lock`.
-
-### Environment variables
-
-Loaded from the environment or the `.env` file by `app/common/settings.py`. New variables go there and in `.env.example`.
-
-| Variable       | Default       | Description                                                     |
-| -------------- | ------------- | --------------------------------------------------------------- |
-| `APP_PORT`     | -             | Host port used by `make dev`.                                   |
-| `ENV`          | `development` | `development`, `test` or `production`. Production logs JSON.    |
-| `LOG_LEVEL`    | `INFO`        | Python logging level.                                           |
-| `CORS_ORIGINS` | `[]`          | JSON list of allowed origins, e.g. `["http://localhost:3000"]`. |
-
-## Validation layers
-
-Tests written by an AI agent can pass and still prove little, and an agent under pressure to make a check pass can weaken the check instead of fixing the code. These deterministic layers catch what line coverage does not and make weakening the pipeline visible.
-
-### Boot smoke test (`make smoke`)
-
-`scripts/smoke.sh` boots the API for real (uvicorn, `ENV=production`, environment loaded from `.env.example`), waits for `/health` with a timeout, then calls `/health` (liveness: touches no dependency) and `/ready` (readiness: runs the checks of every real dependency, returns `503` if any is down). On failure it prints the API logs; on exit it always stops everything. It runs in CI as the `smoke` job and blocks the PR.
-
-The template has no database, so `/ready` reports `{"status": "ready", "dependencies": []}`. To adapt it to your project:
-
-1. **Add a dependency check**: implement `ReadinessCheckContract` in `app/infra/` (e.g. a `SELECT 1` on Postgres, catching the driver's specific exceptions and returning `False`) and register it in `app/presentation/factories/check_readiness_factory.py`.
-2. **Start the dependencies**: create a compose file with them (e.g. `docker/docker-compose.smoke.yaml` with a Postgres and a `healthcheck`) and run `SMOKE_COMPOSE_FILE=docker/docker-compose.smoke.yaml make smoke`. Make it the default in the script if you want. In CI, use `services:` in the `smoke` job (an example is commented in `ci.yml`).
-3. **Run migrations on an empty database**: set `SMOKE_MIGRATE_COMMAND`, e.g. `uv run --no-dev alembic upgrade head`.
-4. **Point the app at the dependencies**: put the variables (e.g. `DATABASE_URL`) in `.env.example`; the smoke test boots with exactly that file (`SMOKE_ENV_FILE` picks another one), so no test-only environment hides a broken configuration.
-
-Other options: `SMOKE_PORT` (default `18000`), `SMOKE_TIMEOUT` (default `30` seconds) and `SMOKE_ENV` (default `production`).
-
-The boot itself (environment file, dependencies, migrations, uvicorn, wait for `/health`, cleanup) lives in `scripts/api_server.sh`, which `scripts/smoke.sh` and `scripts/contract.sh` source, so both checks boot the API the same way and accept the same `SMOKE_*` options.
-
-### API contract tests (`make contract`)
-
-`scripts/contract.sh` boots the API like the smoke test and runs [Schemathesis](https://schemathesis.readthedocs.io/) against `/openapi.json` with every check (`--checks all`): no 5xx, documented status codes, content types, headers and response schemas, invalid input rejected and valid input accepted. It generates the requests from the schema FastAPI publishes, so a route that returns something it does not declare, or crashes on an input its signature accepts, fails here even when its unit tests pass.
-
-The pass is bounded and reproducible: one worker, a fixed seed and no example database, so the same code always sends the same requests and a CI failure reproduces locally with `make contract`. Options: `CONTRACT_MAX_EXAMPLES` (test cases per operation and phase, default `50`), `CONTRACT_SEED` (default `1`; change it locally to explore other inputs) and `CONTRACT_REQUEST_TIMEOUT` (seconds per request, default `5`). Extra arguments go to `schemathesis run`, e.g. authentication for protected routes: `./scripts/contract.sh --header "Authorization: Bearer $TOKEN"`. It runs as the `contract` CI job and blocks the PR. On failure the Quality Report shows each failing operation with a `curl` to reproduce it and the API logs.
-
-When it fails, fix the route or declare the response it really returns (`responses=` on the route); do not exclude checks or operations to make it pass.
-
-### Breaking API changes (`make openapi-diff`)
-
-`scripts/openapi.py diff` compares the OpenAPI schema of `HEAD` with the one of the merge base with the base branch and runs [oasdiff](https://github.com/oasdiff/oasdiff) `changelog --fail-on ERR` on them. Removing an endpoint or a response field, making a parameter required or narrowing a type is an error and fails the PR; changes oasdiff classifies as warnings show up as ⚠️, and additive changes are listed for the reviewer in the Quality Report.
-
-Both schemas are generated, nothing is committed: the script imports `app.main.main` and dumps `app.openapi()` for `HEAD`, then checks the merge base out in a temporary `git worktree` and does the same there with that commit's own locked dependencies (`uv run --locked --no-dev`). A committed `openapi.json` would only add a file to keep in sync, and the merge base already is the reference the PR is merged into. Comparing with the merge base instead of the tip of the base branch keeps endpoints added to `main` after the branch was cut from showing up as removals.
-
-It runs as the `openapi-diff` CI job (PRs only, full history). CI downloads a pinned oasdiff release and verifies its sha256 (`OASDIFF_VERSION`/`OASDIFF_SHA256` in `ci.yml`; Dependabot does not track it, bump both together). Locally, install oasdiff (`brew install oasdiff`, `go install github.com/oasdiff/oasdiff@latest` or a [release binary](https://github.com/oasdiff/oasdiff/releases)) and run `make openapi-diff` (`BASE=origin/<branch>` to change the base; `uv run python scripts/openapi.py diff --oasdiff <path>` for a binary outside the `PATH`). To look at the schema itself: `uv run python scripts/openapi.py export --output openapi.json`.
-
-A breaking change is a deliberate product decision, not something to make pass: keep the old route or field, add the new one next to it and deprecate the old one.
-
-### Architecture contracts (`make lint-imports`)
-
-[import-linter](https://import-linter.readthedocs.io/) contracts in `pyproject.toml` (`[tool.importlinter]`) mirror the architecture rules: layers (`main > presentation > infra > domain`), the domain not importing `infra`, `presentation`, `common`, `main` or web/ORM/HTTP frameworks, layers inside the domain, and independence between use case features and between infra integrations. It runs as a pre-commit hook, in `make hooks` and as the `lint-imports` CI job.
-
-To add a contract, append a block to `pyproject.toml` and run `make lint-imports`:
-
-```toml
-[[tool.importlinter.contracts]]
-name = "Billing does not depend on shipping"
-type = "forbidden"            # or "layers" / "independence"
-source_modules = ["app.domain.usecases.billing"]
-forbidden_modules = ["app.domain.usecases.shipping"]
-```
-
-When a contract breaks, fix the import. Only relax a contract (or add `ignore_imports`) as a deliberate architecture decision, never to make a check pass.
-
-### Mutation testing (`make mutation`)
-
-[mutmut](https://mutmut.readthedocs.io/) changes the domain code (flips a `>` into `>=`, drops an argument, negates a condition...) and runs the tests against each change. A test suite that still passes has a **surviving mutant**: that line is executed but its behaviour is not asserted. Coverage says the line ran; mutation testing says whether a test would notice if it were wrong.
-
-The scope is `app/domain` (use cases and business rules, `[tool.mutmut]` in `pyproject.toml`); infra, presentation, main and common are covered by integration tests and left out. The `Mutation testing` workflow (called from `ci.yml` on PRs, so its result reaches the Quality Report) runs:
-
-- **on every PR**, mutating only the domain files changed in the diff (`git diff origin/<base>...HEAD` filtered by `source_paths`/`do_not_mutate`). If the PR touches no domain file, the job ends in seconds with "No domain files changed". It fails when the score of the mutated files is below the minimum;
-- **weekly** (and on demand via `workflow_dispatch`) on the whole scope, as a safety net.
-
-Reading the run: the **Quality Report** comment has a *Mutation testing* row with the killed mutants, the threshold and the score (with its variation against the base when there is one); when it fails, an open section lists the survivors (file and function). The job's **Summary** tab has the same data in more detail. It shows the score, killed vs survived counts and a table of the survivors with file, function and mutant name. Run `uv run mutmut show <mutant>` locally to see the diff.
-
-**Tuning.** The gate is the repository variable `MUTATION_MIN_SCORE` (Settings → Secrets and variables → Actions → Variables; default `90`, locally it is read from the environment). Set it to your project's baseline. The scope is `[tool.mutmut]` in `pyproject.toml` (`source_paths`, `do_not_mutate`); the PR job follows it automatically. Only changes to files in scope trigger mutation; test-only changes do not.
-
-`mutants/` is mutmut's working copy (copies of the code plus per-mutant results). It is regenerated on every run, is large and machine specific, and mutmut reuses stored results for unchanged source files even when the tests changed, so a stale copy can hide survivors: keep it out of git (it is in `.gitignore`) and delete it if results look stale. CI caches it with an exact key over domain code, tests and lockfile.
-
-Reading the result:
 
 ```sh
-make mutation           # whole domain, then prints the score and the survivors
-make mutation-changed   # only domain files changed vs origin/main (BASE=... to change), as the PR job does
-make mutation-results   # lists the survivors
-uv run mutmut show <name>   # diff of a surviving mutant: what changed and no test noticed
+make test            # all tests with coverage (fails under 80%); make test-unit for unit only
+make hooks           # every pre-commit check (table below)
+make smoke           # boots the real API and calls /health and /ready
+make contract        # boots the real API and runs Schemathesis against /openapi.json
+make openapi-diff    # breaking OpenAPI changes vs BASE (default origin/main); needs oasdiff
+make format-code     # fix lint issues and format with ruff
+make build           # production Docker image (dev and production stages in docker/)
 ```
 
-Score per module = killed ÷ total mutants. For each survivor, either add the missing assertion, or, if the mutant does not change behaviour (an equivalent mutant), leave it. Don't lower the scope to raise the score.
+Add dependencies with `uv add <package>` (`--dev` for tools) and commit `uv.lock`. The full command list is in `CLAUDE.md` and the `Makefile`.
 
-### Suppression ratchet (`make suppressions`)
+## Environment variables
 
-`scripts/suppressions.py` counts, per file and per kind, every suppression in `app/`, `scripts/` and `tests/`:
+Read by `app/common/settings.py` from the environment or `.env`; new ones also go in `.env.example`.
 
-| Kind | Matches |
-| --- | --- |
-| `noqa` | `# noqa`, `# noqa: E501`, `# ruff: noqa` |
-| `type-ignore` | `# type: ignore`, `# type: ignore[code]` |
-| `nosec` | `# nosec` (bandit) |
-| `no-cover` | `# pragma: no cover`, `# pragma: no branch` |
-| `pylint-disable` / `mypy-directive` / `pyright-directive` | `# pylint: disable=...`, `# mypy: ...`, `# pyright: ...` |
-| `formatter-off` | `# fmt: off`, `# fmt: skip`, `# isort: skip_file`... |
-| `test-skip` / `test-xfail` | `pytest.mark.skip`/`skipif`/`xfail`, `pytest.skip()`/`importorskip()`/`xfail()`, `unittest.skip*`/`expectedFailure`, `self.skipTest()` |
+| Variable | Default | Description |
+| --- | --- | --- |
+| `APP_PORT` | - | Host port used by `make dev`. |
+| `ENV` | `development` | `development`, `test` or `production` (JSON logs). |
+| `LOG_LEVEL` | `INFO` | Python logging level. |
+| `CORS_ORIGINS` | `[]` | JSON list of allowed origins, e.g. `["http://localhost:3000"]`. |
 
-Comments are read with `tokenize` and tests with `ast`, so the same text inside a string does not count. The counts are compared with the committed `suppressions-baseline.json`:
+## Pipeline
 
-- **a count went up** (a new suppression, or one moved to another file): the check fails and lists the file, kind and lines. Remove the suppression and fix the cause. Raising the baseline (`uv run python scripts/suppressions.py update --allow-increase`) needs the owner's explicit approval, and the baseline change shows up in the PR diff;
-- **a count went down**: the check also fails until you run `make suppressions-update` and commit the lower baseline in the same PR, so the improvement is locked in and reviewed;
-- **counts match**: the check passes.
+Each check is a CI job (`.github/workflows/ci.yml`) and gates the PR; `scripts/quality_report.py` turns their output into a single **Quality Report** comment per PR (verdict, what to fix with the command to reproduce it, a status table by area).
 
-It runs as a pre-commit hook, in `make hooks` and as the `suppressions` CI job. Configuration that disables checks globally (`pyproject.toml`, `.pre-commit-config.yaml`, the workflows) is not counted here: the `pr-writer` agent always names a changed gate in the PR summary, so a reviewer sees when a gate changes.
+| Check | Tool | Job | Local |
+| --- | --- | --- | --- |
+| Lint and format | ruff | `lint` | `make check-code` |
+| Types | mypy (strict) | `types` | `make hooks` |
+| Code security, vulnerable dependencies | bandit, pip-audit | `security` | `make hooks` |
+| Declared dependencies | deptry | `dependencies` | `make deptry` |
+| Dead code (advisory) | vulture | `dead-code` | `make hooks` |
+| Complexity | xenon | `complexity` | `make hooks` |
+| Duplicated code in `app/` (zero clones, `.jscpd.json`) | jscpd | `duplication` | `make jscpd` |
+| Suppression ratchet (`suppressions-baseline.json`) | `scripts/suppressions.py` | `suppressions` | `make suppressions` |
+| Architecture contracts (`[tool.importlinter]`) | import-linter | `lint-imports` | `make lint-imports` |
+| Tests and coverage ≥ 80% | pytest | `tests` | `make test` |
+| Boot smoke, `/health` and `/ready` | `scripts/smoke.sh` | `smoke` | `make smoke` |
+| API contract | Schemathesis | `contract` | `make contract` |
+| Breaking API changes | oasdiff | `openapi-diff` | `make openapi-diff` |
+| Mutation testing of the domain (`MUTATION_MIN_SCORE`, default 90) | mutmut | `mutation` | `make mutation-changed` |
+| One `risk:*` and one `deploy:*` label | `scripts/pr_labels.py` | `pr-labels` | - |
 
-### PR labels
-
-Every PR carries exactly one `risk:<level>` and exactly one `deploy:<kind>` label, assigned by the `pr-writer` agent when it opens the PR (see [Pull request flow](#pull-request-flow)). Both are judgements about the diff, not a function of the files it touches (rubrics in `.claude/agents/pr-writer.md`, summarized in `CLAUDE.md`, "Risk and deploy labels").
-
-| Label | When |
-| --- | --- |
-| `risk:low` | No observable behavior changes: docs, tests, CI, formatting, dependency patch or minor bumps, refactors covered by tests. |
-| `risk:medium` | New or changed behavior, contained, and a revert recovers everything. |
-| `risk:high` | Changes a flow already in production that people or money go through, breaks a public contract or changes existing data. The risk sentence must name the flow. |
-| `risk:critical` | High, plus a revert does not undo it (data deleted, message sent, money moved), data leaks or the recovery path goes down. Only on a **Critical surface** of `CLAUDE.md`, changing behavior there. |
-| `deploy:none` | Nothing beyond the merge. |
-| `deploy:simple` | An environment variable, secret or flag. |
-| `deploy:migration` | Runs a migration, in order. |
-| `deploy:coordinated` | Depends on another PR or repository, or needs a schedule, queue or service paused. |
-
-The risk answers three questions: what breaks, for whom, and does a revert undo it? A change behind a flag that is off goes one level lower, and a doubt between two levels picks the lower one. High and critical are rare by design (about 85% of PRs low or medium, up to ~12% high, under 2% critical): if everything is high or critical, nothing is. Deploy steps do not raise the risk; they set the `deploy:<kind>` label, and a PR with a Deploy section is never `deploy:none`. Before choosing `high` or `critical`, the agent reads the **Critical surfaces** section of `CLAUDE.md`, the list of places where a failure is hardest to undo. It ships as a placeholder with generic examples: a repository derived from this template must replace it with its own surfaces after reading its code.
-
-The **PR labels** workflow (`.github/workflows/pr-labels.yml`, job `pr-labels`; formerly `risk-label.yml`, job `risk-label`) runs `scripts/pr_labels.py check` on every push and every label change and fails, with one line per problem, when the PR has no risk or deploy label, more than one of either, or an unknown one. It reads the labels from the API when it runs (not from the event that triggered it), and runs of the same PR queue instead of cancelling each other, so the final result applies to the current labels. It is a separate workflow so that changing a label does not re-run the whole CI, and for that reason it is not part of the Quality Report. The check does not require a specific reviewer's approval; merging stays with the owner. A branch protection rule that required the old `risk-label` check must require `pr-labels` instead.
-
-Create the labels once with `make labels` (idempotent: `gh label create --force`; `make risk-labels` still creates only the risk ones). Dependabot PRs are born `risk:low` and `deploy:none` through `labels` in `.github/dependabot.yaml`; relabel a major bump by hand when it changes behavior.
-
-## Quality Report
-
-Every pull request gets **one** comment (marker `<!-- quality-report -->`, updated in place on every push). The report only informs: each analysis job is still the gate, and nothing in the comment changes what blocks the merge. Top to bottom:
-
-1. **Verdict**, one line in a GitHub alert: `[!CAUTION]` when something failed, `[!WARNING]` when only advisory warnings remain, `[!TIP]` when everything passed, with the counts (`❌ 1 failed · ✅ 12 passed · ⏭️ 1 skipped`). When every failure also fails on the base branch it says so (`1 failed, inherited from main`).
-2. **What to fix, open**: one section per failed (then warning) check, with the parsed problem (vulnerable packages as `package · version · CVE · fixed in` plus the `uv lock --upgrade-package` command, failed tests with their message, the broken import contract and the violating import, new suppressions by file and line, survivors by file and function, the failing API operations with a `curl`...) and the exact local command to reproduce it.
-3. **Status table** grouped by area, with a one-line detail per check (`191 tests · coverage 100.00% (=)`, `35 files`, `7 contracts kept`, `79 cases on 3 operations · seed 1`). A skipped check shows why (`no domain file changed`, ``job `smoke` cancelled``).
-4. **One closed `<details>`** ("N passed") with the extra detail of the passing checks (coverage per file, contracts, suppressions by kind, additive API changes). Passing checks get no section of their own.
-5. **Footer**: short commit sha, UTC time, a link to the workflow run and the base run used for the comparison.
-
-Statuses: ✅ passed, ⚠️ warning (advisory, does not block), ❌ failed, ⏭️ not run.
-
-| Area | Check | Tool | Job | Detail |
-| --- | --- | --- | --- | --- |
-| Code | Lint and format | ruff check + format | `lint` | files formatted; issues on failure |
-| | Types | mypy (strict) | `types` | files checked or error count |
-| | Dead code | vulture | `dead-code` | items found (⚠️, advisory) |
-| | Complexity | xenon | `complexity` | blocks above the threshold |
-| | Suppressions | `scripts/suppressions.py` | `suppressions` | total with the variation; new or stale suppressions by file, kind and line |
-| Security and dependencies | Code security | bandit | `security` | lines scanned or issues |
-| | Vulnerable dependencies | pip-audit | `security` | vulnerabilities and packages; table with the fixed version |
-| | Declared dependencies | deptry | `dependencies` | files scanned or dependency issues |
-| Behavior | Tests and coverage | pytest + coverage | `tests` | tests, coverage with the variation; failed tests |
-| | Boot smoke | `scripts/smoke.sh` | `smoke` | time to healthy; API logs only on failure |
-| | API contract | Schemathesis (`scripts/contract.sh`) | `contract` | cases, operations and seed; failing checks, a `curl` per failure and the API logs |
-| | Breaking API changes | oasdiff (`scripts/openapi.py`) | `openapi-diff` | breaking (❌), possible breaking (⚠️) and every API change |
-| | Mutation testing | mutmut (`mutation.yml`) | `mutation` | killed mutants, score with the variation; survivors |
-| Architecture | Architecture contracts | import-linter | `lint-imports` | contracts kept; broken contract and violating import |
-
-**Comparison with the base branch.** The `quality-report` job downloads the fragments of the last completed push run of `ci.yml` on the PR's base branch (`gh run list` + `gh run download`, `actions: read`), whether that run passed or failed. From them the report shows the variation of the stable numbers (coverage, suppression total and, when the base has one, the mutation score) as `100.00% (=)`, `91.2% (↓2.1)`, and labels a failed check **inherited from `main`** when the same analysis also failed there (same analysis failing, not necessarily the same findings). Mutation testing and oasdiff only run on PRs, so their base is normally missing. When there is no base (no completed run, artifacts past their 7-day retention, API error) the variation is `n/a`, nothing is marked inherited and the footer says so: the baseline never fails the report.
-
-**How it works.** Each analysis job runs its tool through `scripts/quality_report.py run <analysis> -- <command>`. The wrapper streams the output, returns the tool's own exit code (the job is still the gate; the report never decides what blocks) and saves a *fragment* `quality-fragments/<analysis>.json`, which the job uploads as the `quality-fragment-<job>` artifact. The final `quality-report` job (`needs` every analysis, `if: always()`, only on PRs, `pull-requests: write`) downloads the fragments, runs `scripts/quality_report.py render` and upserts the comment. A job that failed, was cancelled or produced no fragment appears as ❌ / ⏭️ instead of breaking the report. The report is also written to the job summary, which is the fallback for PRs from forks, where the token is read-only and posting the comment only emits a warning (this fork path is not validated by the PR that introduced it).
-
-Coverage is part of the report: the separate coverage comment no longer exists on PRs, and `python-coverage-comment-action` only updates the README badge on push to `main`.
-
-**Fragment contract.** A fragment is a JSON file `{"analysis": "<id>", "exit_code": 0, "output": "<tool output>", "advisory": false}`. The renderer parses `output` with one function per analysis, so the format of each section is tested in `tests/unit/scripts/test_quality_report.py`. `advisory` (`--advisory` in the wrapper) records the real exit code but makes the wrapper exit 0, for checks that only inform (vulture). Mutation testing also prints a `MUTATION_RESULT: {json}` line (see `scripts/mutation.py`) and the suppression ratchet a `SUPPRESSIONS_RESULT: {json}` line (see `scripts/suppressions.py`).
-
-**Adding an analysis.**
-
-1. Add a value to `Analysis` and an `analyze_<tool>(fragment) -> Finding` function (status, one-line summary for the table, optional details shown open on failure, optional `Metric` compared with the base) in `scripts/quality_report.py`, register it in `ANALYZERS` and add a `Section` (area `Group`, title, job name, analyses, command to reproduce locally) to `SECTIONS`, next to the checks of the same area.
-2. Create the job in `ci.yml` running the tool as `uv run --locked python scripts/quality_report.py run <analysis> -- <command>`, then upload `quality-fragments/` as the artifact `quality-fragment-<job>` with `if: ${{ !cancelled() }}`.
-3. Add the job to the `needs` of `quality-report`.
-4. Add tests with a sample of the tool's output.
-
-Render locally from fragments: `uv run python scripts/quality_report.py render --dir quality-fragments` (add `--base-dir <fragments of a base run> --base-name main` to see the comparison).
-
-## Folder structure
-
-```
-app/
-├── common/                 # Cross-cutting code usable by any layer: settings and logging
-├── domain/                 # Business core, framework-free
-│   ├── constants/
-│   ├── enums/
-│   ├── errors/             # Domain errors (NotFoundError, ConflictError...)
-│   ├── contracts/          # Interfaces implemented by infra (repositories, gateways) and the base use case
-│   ├── entities/           # Models and value objects
-│   ├── services/           # Domain services shared by use cases
-│   └── usecases/           # One use case per operation
-├── infra/                  # Contract implementations: database, HTTP clients, mail, SMS...
-├── presentation/
-│   ├── factories/          # Build use cases injecting their infra dependencies
-│   └── fastapi/            # App config, routes, middlewares and error handlers
-└── main/                   # Entry point: loads settings and logging and creates the app
-tests/
-├── unit/                   # Fast tests with mocked dependencies, mirroring app/
-└── integration/            # HTTP tests with TestClient
-```
-
-The domain never imports from `infra`, `presentation` or `common`: it declares contracts, `infra` implements them and the factories in `presentation` wire everything together. Domain errors (`NotFoundError`, `ConflictError`...) raised by use cases are turned into HTTP responses by `presentation/fastapi/handlers/domain_error_handler.py`.
-
-### Adding a feature
-
-1. Model in `domain/entities/` and contract in `domain/contracts/`
-2. Use case in `domain/usecases/<feature>/`
-3. Contract implementation in `infra/`
-4. Factory in `presentation/factories/` and route in `presentation/fastapi/routes/` (register it in `routes/__init__.py`)
-5. Unit tests in `tests/unit/` and route tests in `tests/integration/`
+- **Smoke and contract with real dependencies**: implement `ReadinessCheckContract` in `app/infra/`, register it in `check_readiness_factory`, and set `SMOKE_COMPOSE_FILE`/`SMOKE_MIGRATE_COMMAND` (all options in `scripts/api_server.sh` and `scripts/contract.sh`); in CI add `services:` to both jobs (example in `ci.yml`).
+- **oasdiff locally**: `brew install oasdiff` or `go install github.com/oasdiff/oasdiff@latest`; CI pins the version and sha256 in `ci.yml`.
+- **Mutation**: `MUTATION_MIN_SCORE` is a repository variable; scope in `[tool.mutmut]`; `make mutation` runs the whole domain (also weekly in `mutation.yml`).
 
 ## AI-assisted development
 
-The template is ready for coding agents such as [Claude Code](https://docs.claude.com/en/docs/claude-code/overview):
+`coder` implements on a branch and leaves handoff notes, `pr-writer` opens the PR with the template and its labels, `reviewer` reviews; only the owner merges (agents in `.claude/agents/`, flow and label rubrics in `CLAUDE.md`). An empty `.local_dev` file at the root makes the agent edit files directly, with no branch or PR. The **Personal preferences** in `CLAUDE.md` are the author's taste: change them freely.
 
-- **`CLAUDE.md`** (also `AGENTS.md`, a symlink read by Cursor, Codex and others): architecture rules, commands and the checklist every change must pass before a PR.
-- **`.claude/agents/coder.md`**: implements a task on a `claude/<slug>` branch, with tests, runs all checks, commits, pushes and leaves handoff notes. It opens the PR itself only as a fallback.
-- **`.claude/agents/pr-writer.md`**: reads the pushed branch cold, commit by commit, fills the PR template, assigns the risk level and the deploy kind, opens the PR with its `risk:<level>` and `deploy:<kind>` labels and stops. Never writes code, never merges.
-- **`.claude/agents/reviewer.md`**: read-only review of a branch against the project rules.
-- **`.claude/settings.json`**: allows the common commands (uv, make, read-only git, gh), denies destructive ones (`rm -rf`, force push, hard reset, reading `.env`) and runs `.claude/hooks/ruff.sh` after every edit, formatting the file and sending unfixable lint errors back to the agent.
-
-Create an empty `.local_dev` file at the root to work directly on your local branch: the agent then edits files without delegating to `coder` or opening PRs.
-
-### Pull request flow
-
-Reading AI-written diffs is the bottleneck, so the PR description tells the reviewer how much attention the PR deserves and what changed in behavior and in rules, written by an agent that did not write the code:
-
-1. **`coder`** implements on a branch, runs every check, commits one logical step per commit, pushes and writes **handoff notes** to `.handoff/<branch>.md` (gitignored): the task verbatim, what was done and why, decisions, deploy notes and an explicit **Not verified** list. It does not open the PR or assess the risk.
-2. **`pr-writer`** (Opus) gets the task, the branch and the notes. It reads the diff cold, commit by commit, checks every claim against the diff and the tests and reconciles them with the notes, then fills `.github/pull_request_template.md` with a short body (target 1,200 characters, hard cap 2,500) where no fact repeats and every section without content is omitted (no "None" or "N/A"):
-   - **📝 Summary**: at most 50 words on what the PR does and why it exists, standing alone. Its last sentence says what was not verified, only when that changes the reviewer's decision;
-   - **🔄 Behavior**: a `| | Before | After |` table in plain words, or a small Mermaid diagram for a flow or a `diff` block for a contract when the table does not fit; never more than one visual;
-   - **🚀 Deploy**: a checklist (`- [ ] ...`) of the real steps, in order (run a migration, merge another PR first, set an env var, redeploy a service);
-   - **Risk alert**: only when the risk is worth flagging, a `> [!WARNING]` (or `> [!CAUTION]` for critical) of at most 50 words starting with `Risk:` and naming what can break and for whom.
-
-   A stacked-PR line (`Stacked on #N; merge it first.`) goes at the top only when the PR is stacked, and a **Mismatch** line at the end only when the diff contradicts the handoff notes. There is no attribution footer. It assigns the `risk:<level>` and `deploy:<kind>` labels by the rubrics in [PR labels](#pr-labels), opens the PR with both (creating the labels if missing) and stops.
-3. **Fallback**: if `pr-writer` fails, `coder` opens the PR with a minimal body (summary, risk "unassessed", Deploy checklist if any) and the `deploy:<kind>` label but no risk label, so a failure never blocks delivery; the [PR labels](#pr-labels) check stays red until a person sets the risk label.
-4. **Merge**: only the owner merges. The Quality Report comment and the PR labels check run on every PR.
-
-People opening PRs by hand get the same template from GitHub.
-
-### Porting the PR flow to another language
-
-Repositories that replicate this design in another language (for example Portuguese) translate only the text people read, and keep everything machines match in English:
-
-- **Translate**: the section headings and guidance comments of `.github/pull_request_template.md` (keep the emojis and the order), the word `Risk:` that opens the risk alert, the fixed lines `Stacked on #N; merge it first.` and `**Mismatch:**`, the matching strings quoted in `.claude/agents/pr-writer.md` (steps 5 to 8) and in the fallback body of `.claude/agents/coder.md`, and the label descriptions in the `risk-labels` and `deploy-labels` targets of the `Makefile`.
-- **Keep as is**: the label names (`risk:<level>`, `deploy:<kind>`) and colors, `scripts/pr_labels.py` and its messages, the workflow and job names (`PR labels`, `pr-labels`), the GitHub alert keywords (`[!WARNING]`, `[!CAUTION]`) and the Conventional Commits types in PR titles.
-
-> [!NOTE]
-> The **Personal preferences** section of `CLAUDE.md` holds the template author's own taste (no docstrings, `StrEnum` for fixed strings, latest dependency versions, etc.). They are not part of the architecture — change or remove them to match yours.
-
-## Configuration files
-
-| File                         | Description                                                             |
-| ---------------------------- | ----------------------------------------------------------------------- |
-| `pyproject.toml`             | Dependencies and ruff, mypy, pytest, coverage, vulture, xenon, deptry, import-linter and mutmut config. |
-| `uv.lock`                    | Locked dependency versions.                                             |
-| `.python-version`            | Python version used by uv.                                              |
-| `.pre-commit-config.yaml`    | Git hooks running all quality checks.                                   |
-| `scripts/smoke.sh`           | Boot smoke test (`make smoke`).                                         |
-| `scripts/contract.sh`        | Schemathesis contract test (`make contract`).                           |
-| `scripts/api_server.sh`      | API boot shared by the smoke and contract tests.                        |
-| `scripts/openapi.py`         | OpenAPI export and breaking-change diff against the base branch (`make openapi-diff`). |
-| `.github/workflows/mutation.yml` | Mutation testing on PRs (changed files), weekly and on demand.      |
-| `scripts/mutation.py`        | Mutation target selection, summary and score gate.                      |
-| `scripts/quality_report.py`  | Runs analyses as CI fragments and renders the single Quality Report.    |
-| `scripts/suppressions.py`    | Suppression ratchet (`make suppressions`).                              |
-| `suppressions-baseline.json` | Committed suppression counts per file and kind.                         |
-| `scripts/pr_labels.py`       | PR labels check: exactly one known `risk:<level>` and one known `deploy:<kind>` label. |
-| `.github/workflows/pr-labels.yml` | Fails PRs without exactly one known risk label and one known deploy label. |
-| `.env.example`               | Environment variables template.                                         |
-| `.github/workflows/ci.yml`   | CI pipeline: one job per analysis plus the `quality-report` job.        |
-| `.github/dependabot.yaml`    | Dependency updates.                                                     |
-| `.github/pull_request_template.md` | PR description structure: summary, behavior, deploy checklist, risk alert. |
-| `.vscode/settings.json`      | Ruff format on save and pytest integration.                             |
-| `CLAUDE.md` / `AGENTS.md`    | Instructions for AI coding agents.                                      |
-| `.claude/`                   | Claude Code agents, permissions and hooks.                              |
-| `docker/`                    | Dockerfile (`dev` and `production` stages) and docker compose.          |
+**Porting the PR flow to another language** (e.g. Portuguese): translate only what people read (headings and comments of `.github/pull_request_template.md`, the `Risk:` alert word, the fixed lines `Stacked on #N; merge it first.` and `**Mismatch:**`, the strings quoted in `.claude/agents/pr-writer.md` and in the fallback body of `.claude/agents/coder.md`, the label descriptions in the `Makefile`); keep label names and colors, `scripts/pr_labels.py`, workflow and job names, the `[!WARNING]`/`[!CAUTION]` keywords and Conventional Commits types in English.
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Free to use, modify and distribute for commercial and non-commercial purposes.
+MIT, see [LICENSE](LICENSE).

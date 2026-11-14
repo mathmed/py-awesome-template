@@ -24,6 +24,7 @@ MUTATION_RESULT_PREFIX = "MUTATION_RESULT: "
 # Must match scripts/suppressions.py, which prints this line followed by a JSON document
 SUPPRESSIONS_RESULT_PREFIX = "SUPPRESSIONS_RESULT: "
 MAX_SUPPRESSION_CHANGES_LISTED = 50
+MAX_CLONES_LISTED = 50
 UV_NOISE = re.compile(r"^warning: `VIRTUAL_ENV=.*$", re.MULTILINE)
 TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M UTC"
 
@@ -37,6 +38,7 @@ class Analysis(StrEnum):
     DEPTRY = "deptry"
     VULTURE = "vulture"
     XENON = "xenon"
+    JSCPD = "jscpd"
     PYTEST = "pytest"
     IMPORT_LINTER = "import-linter"
     SMOKE = "smoke"
@@ -169,6 +171,7 @@ SECTIONS = [
         (Analysis.XENON,),
         "uv run xenon app --max-absolute B --max-modules A --max-average A",
     ),
+    Section(Group.CODE, "Duplication (jscpd)", "duplication", (Analysis.JSCPD,), "make jscpd"),
     Section(
         Group.CODE,
         "Suppressions (ratchet)",
@@ -453,6 +456,65 @@ def analyze_xenon(fragment: Fragment) -> Finding:
         else "complexity above the threshold"
     )
     return Finding(Status.FAILED, summary, tail(output))
+
+
+JSCPD_CLONE = re.compile(
+    r"^Clone found \([^)\n]*\)\n"
+    r" - (?P<first>.+?) \[(?P<first_start>\d+):\d+ - (?P<first_end>\d+):\d+\]"
+    r" \((?P<lines>\d+) lines, (?P<tokens>\d+) tokens\)\n"
+    r"\s+(?P<second>.+?) \[(?P<second_start>\d+):\d+ - (?P<second_end>\d+):\d+\]",
+    re.MULTILINE,
+)
+JSCPD_TOTAL = re.compile(r"^│ Total:.*?│\s*\d+ \((?P<percentage>[\d.]+)%\)\s*│", re.MULTILINE)
+
+
+@dataclass(frozen=True)
+class Clone:
+    first: str
+    second: str
+    lines: int
+    tokens: int
+
+
+def parse_clones(output: str) -> list[Clone]:
+    return [
+        Clone(
+            first=f"{m['first']}:{m['first_start']}-{m['first_end']}",
+            second=f"{m['second']}:{m['second_start']}-{m['second_end']}",
+            lines=int(m["lines"]),
+            tokens=int(m["tokens"]),
+        )
+        for m in JSCPD_CLONE.finditer(output)
+    ]
+
+
+def clones_list(clones: list[Clone]) -> str:
+    items = [
+        f"- `{c.first}` ↔ `{c.second}` ({c.lines} lines, {c.tokens} tokens)"
+        for c in clones[:MAX_CLONES_LISTED]
+    ]
+    hidden = len(clones) - MAX_CLONES_LISTED
+    if hidden > 0:
+        items.append(f"- ... and {hidden} more. Run `make jscpd` for the full list.")
+    items.append("\n**Fix**: extract the duplicated block into a shared function or class.")
+    return "\n".join(items)
+
+
+def analyze_jscpd(fragment: Fragment) -> Finding:
+    output = clean(fragment.output)
+    found = re.search(r"Found (\d+) clones?", output)
+    total = JSCPD_TOTAL.search(output)
+    if found is None or total is None:
+        if fragment.passed:
+            return Finding(Status.OK, "no clones")
+        return Finding(Status.FAILED, "jscpd failed before reporting", tail(output))
+    summary = f"{plural(int(found[1]), 'clone', 'clones')} · {total['percentage']}% duplicated"
+    if fragment.passed:
+        return Finding(Status.OK, summary)
+    clones = parse_clones(output)
+    if not clones:
+        return Finding(Status.FAILED, summary, tail(output))
+    return Finding(Status.FAILED, summary, clones_list(clones), "Clones", is_markdown=True)
 
 
 def coverage_table(output: str) -> str:
@@ -831,6 +893,7 @@ ANALYZERS: dict[Analysis, Callable[[Fragment], Finding]] = {
     Analysis.DEPTRY: analyze_deptry,
     Analysis.VULTURE: analyze_vulture,
     Analysis.XENON: analyze_xenon,
+    Analysis.JSCPD: analyze_jscpd,
     Analysis.PYTEST: analyze_pytest,
     Analysis.IMPORT_LINTER: analyze_import_linter,
     Analysis.SMOKE: analyze_smoke,

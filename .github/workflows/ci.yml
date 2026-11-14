@@ -140,6 +140,28 @@ jobs:
           retention-days: 7
 
 
+  duplication:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      # jscpd is a dev dependency pinned in uv.lock, so CI runs exactly what `make jscpd` runs locally
+      - run: uv sync --locked
+      - name: Duplicated code (jscpd)
+        run: uv run --locked python scripts/quality_report.py run jscpd -- jscpd
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: quality-fragment-duplication
+          path: quality-fragments/
+          if-no-files-found: ignore
+          retention-days: 7
+
+
   suppressions:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -315,7 +337,7 @@ jobs:
 
   quality-report:
     if: always() && github.event_name == 'pull_request'
-    needs: [lint, types, security, dependencies, dead-code, complexity, suppressions, lint-imports, smoke, contract, openapi-diff, tests, mutation]
+    needs: [lint, types, security, dependencies, dead-code, complexity, duplication, suppressions, lint-imports, smoke, contract, openapi-diff, tests, mutation]
     runs-on: ubuntu-latest
     permissions:
       contents: read
