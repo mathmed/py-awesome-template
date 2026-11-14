@@ -1,0 +1,12 @@
+{
+  "name": "py-awesome-template-dev-tools",
+  "private": true,
+  "description": "Development-only Node tools of the quality pipeline (not part of the API runtime)",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "jscpd": "5.4.3"
+  }
+}

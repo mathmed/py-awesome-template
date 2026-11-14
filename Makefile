@@ -1,7 +1,7 @@
 # Base branch used by mutation-changed and openapi-diff
 BASE ?= origin/main
 
-.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code smoke lint-imports deptry mutation mutation-changed mutation-results suppressions suppressions-update contract openapi-diff risk-labels
+.PHONY: setup dev dev-build run build test test-unit hooks check-code format-code smoke lint-imports deptry jscpd mutation mutation-changed mutation-results suppressions suppressions-update contract openapi-diff risk-labels
 
 # Install uv (if missing), project dependencies and git hooks
 setup:
@@ -12,6 +12,8 @@ setup:
 	@echo ">> uv: $$(uv --version)"
 	uv sync
 	@[ -f .env ] || { cp .env.example .env && echo ">> created .env from .env.example"; }
+	@if command -v npm >/dev/null 2>&1; then $(MAKE) --no-print-directory node_modules/.package-lock.json; \
+		else echo ">> npm not found: install Node.js to run make jscpd"; fi
 	uv run pre-commit install
 
 # Start project in development mode (docker)
@@ -38,7 +40,7 @@ test:
 test-unit:
 	uv run pytest tests/unit
 
-# Run all quality checks (ruff, mypy, bandit, vulture, xenon, import-linter, deptry, suppressions, pip-audit)
+# Run all quality checks (ruff, mypy, bandit, deptry, vulture, xenon, jscpd, import-linter, suppressions, pip-audit)
 hooks:
 	uv run pre-commit run --all-files
 
@@ -69,6 +71,14 @@ lint-imports:
 # Check that every import is declared and every dependency is used
 deptry:
 	uv run deptry .
+
+# Detect duplicated code in app/ with jscpd (config in .jscpd.json, version pinned in package-lock.json)
+jscpd: node_modules/.package-lock.json
+	npx --no-install jscpd
+
+# npm writes node_modules/.package-lock.json on every install: reinstall only when the lockfile changes
+node_modules/.package-lock.json: package.json package-lock.json
+	npm ci --no-audit --no-fund
 
 # Mutation testing of the whole domain (slow, see README); results: make mutation-results
 mutation:

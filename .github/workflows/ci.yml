@@ -140,6 +140,32 @@ jobs:
           retention-days: 7
 
 
+  duplication:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      # jscpd is a Node tool: its version (and the integrity of its platform binaries) is pinned in
+      # package-lock.json, so `npm ci` installs exactly what `make jscpd` runs locally
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "26"
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - uses: astral-sh/setup-uv@v7
+      # The wrapper is standard library only: no dependency sync needed
+      - name: Duplicated code (jscpd)
+        run: uv run --no-project python scripts/quality_report.py run jscpd -- npx --no-install jscpd
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: quality-fragment-duplication
+          path: quality-fragments/
+          if-no-files-found: ignore
+          retention-days: 7
+
+
   suppressions:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -315,7 +341,7 @@ jobs:
 
   quality-report:
     if: always() && github.event_name == 'pull_request'
-    needs: [lint, types, security, dependencies, dead-code, complexity, suppressions, lint-imports, smoke, contract, openapi-diff, tests, mutation]
+    needs: [lint, types, security, dependencies, dead-code, complexity, duplication, suppressions, lint-imports, smoke, contract, openapi-diff, tests, mutation]
     runs-on: ubuntu-latest
     permissions:
       contents: read

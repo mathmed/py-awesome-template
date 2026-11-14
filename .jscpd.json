@@ -1,0 +1,17 @@
+{
+  "path": ["."],
+  "pattern": "app/**/*.py",
+  "format": ["python"],
+  "ignore": [
+    "**/__pycache__/**",
+    "**/migrations/**",
+    "**/alembic/versions/**",
+    "**/fixtures/**"
+  ],
+  "minLines": 5,
+  "minTokens": 50,
+  "threshold": 0,
+  "reporters": ["console"],
+  "noColors": true,
+  "noTips": true
+}

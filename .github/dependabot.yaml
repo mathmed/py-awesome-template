@@ -54,3 +54,32 @@ updates:
       actions-major:
         update-types:
           - "major"
+
+  # Node dev tools of the quality pipeline (package.json: jscpd), never part of the API runtime
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 10
+    # Born risk:low and deploy:none, like the uv updates above
+    labels:
+      - "dependencies"
+      - "risk:low"
+      - "deploy:none"
+    # Supply-chain safety: give the community time to detect malicious or broken releases.
+    cooldown:
+      default-days: 10
+      semver-major-days: 15
+      semver-minor-days: 10
+      semver-patch-days: 5
+    groups:
+      node-non-breaking:
+        update-types:
+          - "minor"
+          - "patch"
+      node-major:
+        update-types:
+          - "major"

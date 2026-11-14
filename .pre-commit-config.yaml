@@ -50,6 +50,13 @@ repos:
         types: [python]
         pass_filenames: false
 
+      - id: jscpd
+        name: jscpd (duplicated code)
+        entry: make --no-print-directory jscpd
+        language: system
+        types: [python]
+        pass_filenames: false
+
       - id: lint-imports
         name: import-linter (architecture contracts)
         entry: uv run lint-imports
