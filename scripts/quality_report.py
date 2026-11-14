@@ -6,19 +6,26 @@ import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
 
 MARKER = "<!-- quality-report -->"
 DEFAULT_DIRECTORY = Path("quality-fragments")
+DEFAULT_BASE_NAME = "main"
 MAX_DETAILS_CHARS = 6000
 MAX_SURVIVORS_LISTED = 50
+MAX_VULNERABILITIES_LISTED = 50
+MAX_FAILED_TESTS_LISTED = 30
+MAX_FAILURE_MESSAGE_CHARS = 160
 # Must match scripts/mutation.py, which prints this line followed by a JSON document
 MUTATION_RESULT_PREFIX = "MUTATION_RESULT: "
 # Must match scripts/suppressions.py, which prints this line followed by a JSON document
 SUPPRESSIONS_RESULT_PREFIX = "SUPPRESSIONS_RESULT: "
 MAX_SUPPRESSION_CHANGES_LISTED = 50
 UV_NOISE = re.compile(r"^warning: `VIRTUAL_ENV=.*$", re.MULTILINE)
+TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M UTC"
 
 
 class Analysis(StrEnum):
@@ -46,7 +53,21 @@ class Status(StrEnum):
     SKIPPED = "⏭️"
 
 
+class Group(StrEnum):
+    CODE = "Code"
+    SECURITY = "Security and dependencies"
+    BEHAVIOR = "Behavior"
+    ARCHITECTURE = "Architecture"
+
+
+class Alert(StrEnum):
+    TIP = "TIP"
+    WARNING = "WARNING"
+    CAUTION = "CAUTION"
+
+
 SEVERITY_ORDER = [Status.OK, Status.SKIPPED, Status.WARNING, Status.FAILED]
+ATTENTION_STATUSES = frozenset({Status.FAILED, Status.WARNING})
 
 
 def worst(statuses: list[Status]) -> Status:
@@ -88,42 +109,179 @@ class Fragment:
 
 
 @dataclass(frozen=True)
+class Metric:
+    label: str
+    value: Decimal
+    unit: str = ""
+
+    def render(self, base: Metric | None) -> str:
+        return f"{self.label} {self.value}{self.unit} ({self.delta(base)})"
+
+    def delta(self, base: Metric | None) -> str:
+        if base is None:
+            return "n/a"
+        difference = self.value - base.value
+        if difference == 0:
+            return "="
+        arrow = "↑" if difference > 0 else "↓"
+        return f"{arrow}{abs(difference)}"
+
+
+@dataclass(frozen=True)
 class Finding:
     status: Status
     summary: str
     details: str = ""
     details_title: str = "Output"
+    is_markdown: bool = False
+    metric: Metric | None = None
 
 
 @dataclass(frozen=True)
 class Section:
+    group: Group
     title: str
     job: str
     analyses: tuple[Analysis, ...]
+    reproduce: str
 
 
 SECTIONS = [
-    Section("Lint/format (ruff)", "lint", (Analysis.RUFF_CHECK, Analysis.RUFF_FORMAT)),
-    Section("Types (mypy)", "types", (Analysis.MYPY,)),
-    Section("Security (bandit + pip-audit)", "security", (Analysis.BANDIT, Analysis.PIP_AUDIT)),
-    Section("Dependencies (deptry)", "dependencies", (Analysis.DEPTRY,)),
-    Section("Dead code (vulture)", "dead-code", (Analysis.VULTURE,)),
-    Section("Complexity (xenon)", "complexity", (Analysis.XENON,)),
-    Section("Suppressions (ratchet)", "suppressions", (Analysis.SUPPRESSIONS,)),
-    Section("Tests and coverage (pytest)", "tests", (Analysis.PYTEST,)),
-    Section("Architecture (import-linter)", "lint-imports", (Analysis.IMPORT_LINTER,)),
-    Section("Boot smoke (/health and /ready)", "smoke", (Analysis.SMOKE,)),
-    Section("API contract (schemathesis)", "contract", (Analysis.SCHEMATHESIS,)),
-    Section("Breaking API changes (oasdiff)", "openapi-diff", (Analysis.OASDIFF,)),
-    Section("Mutation testing (mutmut)", "mutation", (Analysis.MUTATION,)),
+    Section(
+        Group.CODE,
+        "Lint and format (ruff)",
+        "lint",
+        (Analysis.RUFF_CHECK, Analysis.RUFF_FORMAT),
+        "make check-code",
+    ),
+    Section(Group.CODE, "Types (mypy)", "types", (Analysis.MYPY,), "uv run mypy app tests"),
+    Section(
+        Group.CODE,
+        "Dead code (vulture)",
+        "dead-code",
+        (Analysis.VULTURE,),
+        "uv run vulture app --min-confidence 80",
+    ),
+    Section(
+        Group.CODE,
+        "Complexity (xenon)",
+        "complexity",
+        (Analysis.XENON,),
+        "uv run xenon app --max-absolute B --max-modules A --max-average A",
+    ),
+    Section(
+        Group.CODE,
+        "Suppressions (ratchet)",
+        "suppressions",
+        (Analysis.SUPPRESSIONS,),
+        "make suppressions",
+    ),
+    Section(
+        Group.SECURITY,
+        "Code security (bandit)",
+        "security",
+        (Analysis.BANDIT,),
+        "uv run bandit -r app -ll",
+    ),
+    Section(
+        Group.SECURITY,
+        "Vulnerable dependencies (pip-audit)",
+        "security",
+        (Analysis.PIP_AUDIT,),
+        "uv run pip-audit",
+    ),
+    Section(
+        Group.SECURITY,
+        "Declared dependencies (deptry)",
+        "dependencies",
+        (Analysis.DEPTRY,),
+        "make deptry",
+    ),
+    Section(
+        Group.BEHAVIOR, "Tests and coverage (pytest)", "tests", (Analysis.PYTEST,), "make test"
+    ),
+    Section(
+        Group.BEHAVIOR, "Boot smoke (/health, /ready)", "smoke", (Analysis.SMOKE,), "make smoke"
+    ),
+    Section(
+        Group.BEHAVIOR,
+        "API contract (schemathesis)",
+        "contract",
+        (Analysis.SCHEMATHESIS,),
+        "make contract",
+    ),
+    Section(
+        Group.BEHAVIOR,
+        "Breaking API changes (oasdiff)",
+        "openapi-diff",
+        (Analysis.OASDIFF,),
+        "make openapi-diff",
+    ),
+    Section(
+        Group.BEHAVIOR,
+        "Mutation testing (mutmut)",
+        "mutation",
+        (Analysis.MUTATION,),
+        "make mutation-changed",
+    ),
+    Section(
+        Group.ARCHITECTURE,
+        "Architecture contracts (import-linter)",
+        "lint-imports",
+        (Analysis.IMPORT_LINTER,),
+        "make lint-imports",
+    ),
 ]
 
 
 @dataclass(frozen=True)
+class Baseline:
+    name: str
+    fragments: dict[Analysis, Fragment]
+    run_url: str = ""
+
+    @property
+    def is_available(self) -> bool:
+        return bool(self.fragments)
+
+
+@dataclass(frozen=True)
+class AnalysisResult:
+    analysis: Analysis
+    finding: Finding
+    base: Finding | None
+
+    @property
+    def is_inherited(self) -> bool:
+        return (
+            self.finding.status == Status.FAILED
+            and self.base is not None
+            and self.base.status == Status.FAILED
+        )
+
+    @property
+    def detail(self) -> str:
+        if self.finding.metric is None:
+            return self.finding.summary
+        base_metric = self.base.metric if self.base else None
+        metric = self.finding.metric.render(base_metric)
+        return f"{self.finding.summary} · {metric}" if self.finding.summary else metric
+
+
+@dataclass(frozen=True)
 class SectionResult:
-    title: str
+    section: Section
     status: Status
-    findings: list[tuple[Analysis, Finding]]
+    results: tuple[AnalysisResult, ...]
+
+    @property
+    def is_inherited(self) -> bool:
+        failed = [result for result in self.results if result.finding.status == Status.FAILED]
+        return bool(failed) and all(result.is_inherited for result in failed)
+
+    @property
+    def detail(self) -> str:
+        return " · ".join(result.detail for result in self.results if result.detail)
 
 
 def clean(output: str) -> str:
@@ -133,7 +291,11 @@ def clean(output: str) -> str:
 def tail(text: str, limit: int = MAX_DETAILS_CHARS) -> str:
     if len(text) <= limit:
         return text
-    return "[...truncado...]\n" + text[-limit:]
+    return "[...truncated...]\n" + text[-limit:]
+
+
+def shorten(text: str, limit: int = MAX_FAILURE_MESSAGE_CHARS) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def first_int(pattern: str, text: str, default: int = 0) -> int:
@@ -145,24 +307,33 @@ def plural(count: int, singular: str, plural_form: str) -> str:
     return f"{count} {singular if count == 1 else plural_form}"
 
 
+def fence(text: str) -> str:
+    return "```text\n" + text.replace("```", "'''") + "\n```"
+
+
+def cell(text: str) -> str:
+    return text.replace("|", "\\|").replace("\n", " ")
+
+
 def analyze_ruff_check(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     if fragment.passed:
-        return Finding(Status.OK, "No lint issues")
+        return Finding(Status.OK, "no lint issues")
     count = first_int(r"Found (\d+) error", output)
-    summary = f"{plural(count, 'lint issue', 'lint issues')}" if count else "Lint failed"
+    summary = plural(count, "lint issue", "lint issues") if count else "lint failed"
     return Finding(Status.FAILED, summary, tail(output))
 
 
 def analyze_ruff_format(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     if fragment.passed:
-        return Finding(Status.OK, "Formatting is correct")
+        files = first_int(r"(\d+) files? already formatted", output)
+        return Finding(Status.OK, f"{plural(files, 'file', 'files')} formatted" if files else "")
     count = len(re.findall(r"^Would reformat: ", output, re.MULTILINE))
     summary = (
-        f"{plural(count, 'file', 'files')} need formatting (`make format-code`)"
+        f"{plural(count, 'file', 'files')} to format (`make format-code`)"
         if count
-        else "Format check failed"
+        else "format check failed"
     )
     return Finding(Status.FAILED, summary, tail(output))
 
@@ -171,36 +342,89 @@ def analyze_mypy(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     if fragment.passed:
         files = first_int(r"no issues found in (\d+) source file", output)
-        return Finding(Status.OK, f"No type errors ({plural(files, 'file', 'files')})")
+        return Finding(Status.OK, plural(files, "file", "files"))
     errors = first_int(r"Found (\d+) error", output)
-    summary = f"{plural(errors, 'type error', 'type errors')}" if errors else "mypy failed"
+    summary = plural(errors, "type error", "type errors") if errors else "mypy failed"
     return Finding(Status.FAILED, summary, tail(output))
 
 
 def analyze_bandit(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     if fragment.passed:
-        return Finding(Status.OK, "No security issues")
+        lines = first_int(r"Total lines of code: (\d+)", output)
+        scanned = f" · {plural(lines, 'line', 'lines')} scanned" if lines else ""
+        return Finding(Status.OK, f"no issues{scanned}")
     issues = len(re.findall(r">> Issue:", output))
     summary = plural(issues, "issue", "issues") if issues else "bandit failed"
     return Finding(Status.FAILED, summary, tail(output))
 
 
+@dataclass(frozen=True)
+class Vulnerability:
+    package: str
+    version: str
+    identifier: str
+    fixed_in: str
+
+
+PIP_AUDIT_HEADER = re.compile(r"^Name\s+Version\s+ID\s+Fix Versions", re.MULTILINE)
+
+
+def parse_vulnerabilities(output: str) -> list[Vulnerability]:
+    header = PIP_AUDIT_HEADER.search(output)
+    if header is None:
+        return []
+    vulnerabilities: list[Vulnerability] = []
+    for line in output[header.end() :].splitlines()[2:]:
+        parts = line.split()
+        if len(parts) < 3:
+            break
+        fixed_in = " ".join(parts[3:]) or "no fix yet"
+        vulnerabilities.append(Vulnerability(parts[0], parts[1], parts[2], fixed_in))
+    return vulnerabilities
+
+
+def vulnerabilities_table(vulnerabilities: list[Vulnerability]) -> str:
+    rows = [
+        "| Package | Version | CVE | Fixed in |",
+        "| --- | --- | --- | --- |",
+        *(
+            f"| {v.package} | {v.version} | {v.identifier} | {v.fixed_in} |"
+            for v in vulnerabilities[:MAX_VULNERABILITIES_LISTED]
+        ),
+    ]
+    hidden = len(vulnerabilities) - MAX_VULNERABILITIES_LISTED
+    if hidden > 0:
+        rows.append(f"\n... and {hidden} more. Run `uv run pip-audit` for the full list.")
+    packages = sorted({v.package for v in vulnerabilities})
+    upgrade = " ".join(f"--upgrade-package {package}" for package in packages)
+    rows.append(f"\n**Fix**: `uv lock {upgrade}`, then `uv sync`.")
+    return "\n".join(rows)
+
+
 def analyze_pip_audit(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     if fragment.passed:
-        return Finding(Status.OK, "No known vulnerabilities")
+        return Finding(Status.OK, "no known vulnerabilities")
     count = first_int(r"Found (\d+) known vulnerabilit", output)
-    summary = (
-        f"{plural(count, 'vulnerability', 'vulnerabilities')}" if count else "pip-audit failed"
-    )
-    return Finding(Status.FAILED, summary, tail(output))
+    packages = first_int(r"known vulnerabilit(?:y|ies) in (\d+) package", output)
+    vulnerabilities = parse_vulnerabilities(output)
+    if not count:
+        return Finding(Status.FAILED, "pip-audit failed", tail(output))
+    summary = plural(count, "vulnerability", "vulnerabilities")
+    if packages:
+        summary += f" in {plural(packages, 'package', 'packages')}"
+    if not vulnerabilities:
+        return Finding(Status.FAILED, summary, tail(output))
+    return Finding(Status.FAILED, summary, vulnerabilities_table(vulnerabilities), is_markdown=True)
 
 
 def analyze_deptry(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     if fragment.passed:
-        return Finding(Status.OK, "Every import is declared and every dependency is used")
+        files = first_int(r"Scanning (\d+) files?", output)
+        scanned = f"{plural(files, 'file', 'files')} · " if files else ""
+        return Finding(Status.OK, f"{scanned}no dependency issues")
     count = first_int(r"Found (\d+) dependency issue", output)
     summary = plural(count, "dependency issue", "dependency issues") if count else "deptry failed"
     return Finding(Status.FAILED, summary, tail(output))
@@ -209,23 +433,24 @@ def analyze_deptry(fragment: Fragment) -> Finding:
 def analyze_vulture(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     if fragment.passed and not output:
-        return Finding(Status.OK, "No dead code detected")
+        return Finding(Status.OK, "no dead code")
     lines = [line for line in output.splitlines() if line.strip()]
     status = Status.WARNING if fragment.advisory else Status.FAILED
-    return Finding(
-        status, f"{plural(len(lines), 'dead code item', 'dead code items')}", tail(output)
-    )
+    summary = plural(len(lines), "dead code item", "dead code items")
+    if fragment.advisory:
+        summary += " (advisory, does not block)"
+    return Finding(status, summary, tail(output))
 
 
 def analyze_xenon(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     if fragment.passed:
-        return Finding(Status.OK, "Complexity within the threshold")
+        return Finding(Status.OK, "within the threshold")
     blocks = len(re.findall(r"^ERROR:xenon:", output, re.MULTILINE))
     summary = (
-        f"{plural(blocks, 'complexity violation', 'complexity violations')}"
+        f"{plural(blocks, 'block', 'blocks')} above the threshold"
         if blocks
-        else "Complexity above the threshold"
+        else "complexity above the threshold"
     )
     return Finding(Status.FAILED, summary, tail(output))
 
@@ -241,9 +466,25 @@ def coverage_table(output: str) -> str:
     return "\n".join(lines[start : end + 1])
 
 
-def analyze_pytest(fragment: Fragment) -> Finding:
-    output = clean(fragment.output)
-    summary_line = next(
+FAILED_TEST = re.compile(r"^(?:FAILED|ERROR) (?P<test>\S+)(?: - (?P<message>.+))?$", re.MULTILINE)
+
+
+def failed_tests_list(output: str) -> str:
+    failures = list(FAILED_TEST.finditer(output))
+    if not failures:
+        return ""
+    items = [
+        f"- `{match['test']}`" + (f": {shorten(match['message'])}" if match["message"] else "")
+        for match in failures[:MAX_FAILED_TESTS_LISTED]
+    ]
+    hidden = len(failures) - MAX_FAILED_TESTS_LISTED
+    if hidden > 0:
+        items.append(f"- ... and {hidden} more")
+    return "\n".join(items)
+
+
+def pytest_summary_line(output: str) -> str:
+    return next(
         (
             line
             for line in reversed(output.splitlines())
@@ -251,24 +492,39 @@ def analyze_pytest(fragment: Fragment) -> Finding:
         ),
         "",
     )
+
+
+def pytest_failure_details(output: str) -> str:
+    failed = failed_tests_list(output)
+    raw = fence(tail(output))
+    if not failed:
+        return raw
+    return f"{failed}\n\n<details><summary>Output</summary>\n\n{raw}\n\n</details>"
+
+
+def analyze_pytest(fragment: Fragment) -> Finding:
+    output = clean(fragment.output)
+    summary_line = pytest_summary_line(output)
     passed = first_int(r"(\d+) passed", summary_line)
     failed = first_int(r"(\d+) failed", summary_line) + first_int(r"(\d+) errors?", summary_line)
-    total = passed + failed + first_int(r"(\d+) skipped", summary_line)
+    skipped = first_int(r"(\d+) skipped", summary_line)
+    total = passed + failed + skipped
     coverage = re.search(r"Total coverage: ([\d.]+)%", output)
     required = re.search(r"Required test coverage of ([\d.]+)%", output)
-    coverage_text = f"{coverage[1]}%" if coverage else "n/a"
-    if required:
-        coverage_text += f" (minimum {required[1]}%)"
-    counts = f"{passed} passed, {failed} failed, {total} total"
-    if failed or not summary_line:
-        summary = counts if summary_line else "pytest failed before finishing"
-        return Finding(Status.FAILED, f"{summary} · coverage {coverage_text}", tail(output))
+    metric = Metric("coverage", Decimal(coverage[1]), "%") if coverage else None
+    tests = plural(total, "test", "tests") + (f" ({skipped} skipped)" if skipped else "")
+    if not summary_line:
+        return Finding(Status.FAILED, "pytest failed before finishing", tail(output))
+    if failed:
+        summary = f"{failed} of {plural(total, 'test', 'tests')} failed"
+        details = pytest_failure_details(output)
+        return Finding(Status.FAILED, summary, details, is_markdown=True, metric=metric)
     if not fragment.passed:
-        summary = f"{counts} · coverage below the minimum: {coverage_text}"
-        return Finding(Status.FAILED, summary, coverage_table(output) or tail(output), "Coverage")
-    return Finding(
-        Status.OK, f"{counts} · coverage {coverage_text}", coverage_table(output), "Coverage"
-    )
+        minimum = f" {required[1]}%" if required else ""
+        summary = f"{tests} · coverage below the{minimum} minimum"
+        details = coverage_table(output) or tail(output)
+        return Finding(Status.FAILED, summary, details, "Coverage", metric=metric)
+    return Finding(Status.OK, tests, coverage_table(output), "Coverage", metric=metric)
 
 
 CONTRACT_LINE = re.compile(r"^(?P<name>.+?)\s*(?P<state>KEPT|BROKEN)$", re.MULTILINE)
@@ -282,31 +538,32 @@ def analyze_import_linter(fragment: Fragment) -> Finding:
     if fragment.passed:
         listing = "\n".join(f"{state:6} {name}" for name, state in contracts)
         return Finding(
-            Status.OK,
-            f"{plural(kept, 'contract kept', 'contracts kept')}",
-            listing,
-            "Contracts",
+            Status.OK, plural(kept, "contract kept", "contracts kept"), listing, "Contracts"
         )
-    broken_names = [name for name, state in contracts if state == "BROKEN"]
-    marker = output.find("Broken contracts")
-    violation = output[marker:] if marker >= 0 else output
     if not contracts:
         return Finding(
             Status.FAILED, "import-linter failed before evaluating the contracts", tail(output)
         )
-    summary = f"{kept} kept, {broken} broken: " + "; ".join(f"**{name}**" for name in broken_names)
-    return Finding(Status.FAILED, summary, tail(violation), "Broken contract and violating imports")
+    broken_names = [name for name, state in contracts if state == "BROKEN"]
+    marker = output.find("Broken contracts")
+    violation = (
+        output[marker:].removeprefix("Broken contracts").lstrip("-\n") if marker >= 0 else output
+    )
+    broken_list = "\n".join(f"- **{name}**" for name in broken_names)
+    details = f"Broken contracts:\n\n{broken_list}\n\n{fence(tail(violation))}"
+    summary = f"{broken} of {plural(kept + broken, 'contract', 'contracts')} broken"
+    return Finding(Status.FAILED, summary, details, is_markdown=True)
 
 
 def analyze_smoke(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
+    seconds = re.search(r">> API healthy after ([\d.]+)s", output)
+    if fragment.passed:
+        boot = f"healthy in {seconds[1]}s · " if seconds else ""
+        return Finding(Status.OK, f"{boot}/health and /ready answered")
     health = ">> GET /health ->" in output
     ready = ">> GET /ready ->" in output
-    seconds = re.search(r">> API healthy after ([\d.]+)s", output)
     endpoints = f"/health {'✅' if health else '❌'} · /ready {'✅' if ready else '❌'}"
-    if fragment.passed:
-        boot = f"started and became healthy in {seconds[1]}s" if seconds else "started"
-        return Finding(Status.OK, f"API {boot} · {endpoints}")
     reason = re.findall(r"^>> smoke: (.+)$", output, re.MULTILINE)
     started = ">> starting the API" in output
     boot = "started but failed" if started else "did not start"
@@ -343,10 +600,7 @@ def schemathesis_scope(output: str) -> str:
     cases = first_int(r"(\d+) generated", output)
     operations = first_int(SCHEMATHESIS_OPERATIONS, output)
     seed = re.search(r"^Seed: (.+)$", output, re.MULTILINE)
-    scope = (
-        f"{plural(cases, 'test case', 'test cases')} on "
-        f"{plural(operations, 'operation', 'operations')}"
-    )
+    scope = f"{plural(cases, 'case', 'cases')} on {plural(operations, 'operation', 'operations')}"
     return f"{scope} · seed {seed[1]}" if seed else scope
 
 
@@ -361,13 +615,13 @@ def schemathesis_details(output: str) -> str:
 def analyze_schemathesis(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     if fragment.passed:
-        return Finding(Status.OK, f"No contract violations · {schemathesis_scope(output)}")
+        return Finding(Status.OK, schemathesis_scope(output))
     verdicts = SCHEMATHESIS_VERDICT.findall(output)
     if not verdicts:
         reasons = re.findall(rf"^>> {CONTRACT_LABEL}: (.+)$", output, re.MULTILINE)
         cause = f": {reasons[-1]}" if reasons else ""
         details = api_logs(output, CONTRACT_LABEL) or output
-        return Finding(Status.FAILED, f"Contract test did not run{cause}", tail(details), "Output")
+        return Finding(Status.FAILED, f"contract test did not run{cause}", tail(details))
     checks = "; ".join(
         f"{match['check']} ({match['count']})" for match in SCHEMATHESIS_FAILURE.finditer(output)
     )
@@ -376,7 +630,7 @@ def analyze_schemathesis(fragment: Fragment) -> Finding:
         Status.FAILED,
         f"{summary} · {schemathesis_scope(output)}",
         schemathesis_details(output),
-        "Failures (reproduce with `make contract`)",
+        "Failures, with a curl per failure",
     )
 
 
@@ -401,7 +655,7 @@ def oasdiff_listing(output: str) -> str:
 def analyze_oasdiff(fragment: Fragment) -> Finding:
     output = clean(fragment.output)
     if fragment.passed and "No changes detected" in output:
-        return Finding(Status.OK, "No API changes")
+        return Finding(Status.OK, "no API changes")
     counts = OASDIFF_COUNTS.search(output)
     errors = int(counts["errors"]) if counts else 0
     if counts is None or (errors == 0 and not fragment.passed):
@@ -477,15 +731,15 @@ def analyze_mutation(fragment: Fragment) -> Finding:
     if outcome is None:
         return Finding(Status.FAILED, "mutmut failed before producing a score", tail(output))
     if outcome.skipped:
-        return Finding(Status.SKIPPED, "No domain file changed, nothing to mutate")
-    survivors = len(outcome.survivors)
+        return Finding(Status.SKIPPED, "no domain file changed")
     summary = (
-        f"score {outcome.score:.1f}% (threshold {outcome.min_score:.1f}%) · "
-        f"{outcome.killed} killed, {survivors} survived out of {outcome.total}"
+        f"{outcome.killed} of {plural(outcome.total, 'mutant', 'mutants')} killed "
+        f"(threshold {outcome.min_score:.1f}%)"
     )
+    metric = Metric("score", Decimal(f"{outcome.score:.1f}"), "%")
     status = Status.OK if outcome.score >= outcome.min_score else Status.FAILED
     details = survivors_table(outcome.survivors) if outcome.survivors else ""
-    return Finding(status, summary, details, "Survivors")
+    return Finding(status, summary, details, "Survivors", True, metric)
 
 
 @dataclass(frozen=True)
@@ -550,23 +804,22 @@ def analyze_suppressions(fragment: Fragment) -> Finding:
         return Finding(
             Status.FAILED, "suppression check failed before producing a result", tail(output)
         )
+    metric = Metric("suppressions", Decimal(outcome.total))
     if outcome.increases:
         added = sum(c.current - c.baseline for c in outcome.increases)
         summary = f"{plural(added, 'new suppression', 'new suppressions')} above the baseline"
         details = suppression_changes_table(outcome.increases)
-        return Finding(Status.FAILED, summary, details, "New suppressions")
+        return Finding(Status.FAILED, summary, details, "New suppressions", True, metric)
     if outcome.changes:
         removed = sum(c.baseline - c.current for c in outcome.changes)
         summary = (
             f"{plural(removed, 'suppression', 'suppressions')} removed but still counted in the "
             "baseline: run `make suppressions-update`"
         )
-        return Finding(
-            Status.FAILED, summary, suppression_changes_table(outcome.changes), "Stale baseline"
-        )
+        details = suppression_changes_table(outcome.changes)
+        return Finding(Status.FAILED, summary, details, "Stale baseline", True, metric)
     listing = "\n".join(f"{kind}: {count}" for kind, count in outcome.totals.items())
-    summary = f"{plural(outcome.total, 'suppression', 'suppressions')}, matching the baseline"
-    return Finding(Status.OK, summary, listing, "By kind")
+    return Finding(Status.OK, "baseline matched", listing, "By kind", metric=metric)
 
 
 ANALYZERS: dict[Analysis, Callable[[Fragment], Finding]] = {
@@ -591,78 +844,149 @@ ANALYZERS: dict[Analysis, Callable[[Fragment], Finding]] = {
 def missing_finding(job: str, job_results: dict[str, str]) -> Finding:
     result = job_results.get(job, "unknown")
     if result in ("cancelled", "skipped"):
-        return Finding(Status.SKIPPED, f"Job `{job}` {result}: analysis not run")
-    return Finding(Status.FAILED, f"Job `{job}` ended as `{result}` without producing a result")
+        return Finding(Status.SKIPPED, f"job `{job}` {result}")
+    return Finding(Status.FAILED, f"job `{job}` ended as `{result}` without producing a result")
+
+
+def base_finding(analysis: Analysis, baseline: Baseline) -> Finding | None:
+    fragment = baseline.fragments.get(analysis)
+    if fragment is None:
+        return None
+    try:
+        return ANALYZERS[analysis](fragment)
+    except (ValueError, KeyError, TypeError) as error:
+        print(f"ignoring the {baseline.name} fragment of {analysis}: {error}", file=sys.stderr)
+        return None
 
 
 def evaluate(
-    section: Section, fragments: dict[Analysis, Fragment], job_results: dict[str, str]
+    section: Section,
+    fragments: dict[Analysis, Fragment],
+    job_results: dict[str, str],
+    baseline: Baseline,
 ) -> SectionResult:
-    findings: list[tuple[Analysis, Finding]] = []
+    results: list[AnalysisResult] = []
     for analysis in section.analyses:
         fragment = fragments.get(analysis)
         finding = (
             ANALYZERS[analysis](fragment) if fragment else missing_finding(section.job, job_results)
         )
-        findings.append((analysis, finding))
-    status = worst([finding.status for _, finding in findings])
-    return SectionResult(section.title, status, findings)
+        results.append(AnalysisResult(analysis, finding, base_finding(analysis, baseline)))
+    status = worst([result.finding.status for result in results])
+    return SectionResult(section, status, tuple(results))
 
 
-def fence(text: str) -> str:
-    return "```text\n" + text.replace("```", "'''") + "\n```"
+def count(results: list[SectionResult], status: Status) -> int:
+    return sum(result.status == status for result in results)
 
 
-def render_details(finding: Finding) -> list[str]:
+def failed_text(results: list[SectionResult], base_name: str) -> str:
+    failed = [result for result in results if result.status == Status.FAILED]
+    inherited = sum(result.is_inherited for result in failed)
+    text = f"{Status.FAILED} {len(failed)} failed"
+    if inherited == 0:
+        return text
+    if inherited < len(failed):
+        return f"{text} ({inherited} inherited from `{base_name}`)"
+    every = "all " if len(failed) > 1 else ""
+    return f"{text}, {every}inherited from `{base_name}`"
+
+
+def verdict(results: list[SectionResult], base_name: str) -> list[str]:
+    failed, warnings = count(results, Status.FAILED), count(results, Status.WARNING)
+    passed, skipped = count(results, Status.OK), count(results, Status.SKIPPED)
+    parts = [failed_text(results, base_name)] if failed else []
+    if warnings:
+        parts.append(f"{Status.WARNING} {plural(warnings, 'warning', 'warnings')}")
+    parts.append(f"{Status.OK} {passed} passed")
+    if skipped:
+        parts.append(f"{Status.SKIPPED} {skipped} skipped")
+    alert = Alert.CAUTION if failed else Alert.WARNING if warnings else Alert.TIP
+    return [f"> [!{alert}]", "> " + " · ".join(parts)]
+
+
+def render_finding_details(finding: Finding) -> list[str]:
     if not finding.details:
         return []
-    return [
-        "",
-        f"<details><summary>{finding.details_title}</summary>",
-        "",
-        fence(finding.details),
-        "",
-        "</details>",
-    ]
+    return ["", finding.details if finding.is_markdown else fence(finding.details)]
 
 
-def render_section(result: SectionResult) -> list[str]:
-    lines = ["", f"### {result.status} {result.title}", ""]
-    multiple = len(result.findings) > 1
-    for analysis, finding in result.findings:
-        label = f"- {finding.status} **{analysis}**: " if multiple else ""
-        lines.append(f"{label}{finding.summary}")
-        lines += render_details(finding)
+def render_problem(result: SectionResult, base_name: str) -> list[str]:
+    lines = ["", f"### {result.status} {result.section.title}"]
+    is_single = len(result.results) == 1
+    for item in result.results:
+        if item.finding.status not in ATTENTION_STATUSES:
+            continue
+        label = "" if is_single else f"**{item.analysis}**: "
+        inherited = f" · inherited from `{base_name}`" if item.is_inherited else ""
+        lines += ["", f"{label}{item.detail}{inherited}"]
+        lines += render_finding_details(item.finding)
+    lines += ["", f"**Reproduce**: `{result.section.reproduce}`"]
     return lines
 
 
-def verdict(results: list[SectionResult]) -> str:
-    failed = sum(r.status == Status.FAILED for r in results)
-    warnings = sum(r.status == Status.WARNING for r in results)
-    skipped = sum(r.status == Status.SKIPPED for r in results)
-    extra = f" ({plural(skipped, 'analysis not run', 'analyses not run')})"
-    if failed:
-        return f"❌ **Failed**: {plural(failed, 'analysis failed', 'analyses failed')}"
-    if warnings:
-        return (
-            f"⚠️ **Passed with warnings**: {plural(warnings, 'analysis', 'analyses')} with warnings"
-        )
-    return "✅ **All good**" + (extra if skipped else "")
+def render_problems(results: list[SectionResult], base_name: str) -> list[str]:
+    lines: list[str] = []
+    for status in (Status.FAILED, Status.WARNING):
+        for result in results:
+            if result.status == status:
+                lines += render_problem(result, base_name)
+    return lines
+
+
+def render_table(results: list[SectionResult], base_name: str) -> list[str]:
+    lines = ["", "| Area | Check | Status | Detail |", "| --- | --- | :---: | --- |"]
+    for group in Group:
+        rows = [result for result in results if result.section.group == group]
+        for index, result in enumerate(rows):
+            area = f"**{group}**" if index == 0 else ""
+            inherited = f" · inherited from `{base_name}`" if result.is_inherited else ""
+            detail = cell(result.detail + inherited)
+            lines.append(f"| {area} | {result.section.title} | {result.status} | {detail} |")
+    return lines
+
+
+def render_passed(results: list[SectionResult]) -> list[str]:
+    passed = [result for result in results if result.status == Status.OK]
+    blocks: list[str] = []
+    for result in passed:
+        for item in result.results:
+            if not item.finding.details:
+                continue
+            title = item.finding.details_title
+            blocks += ["", f"**{result.section.title}** · {title}"]
+            blocks += render_finding_details(item.finding)
+    if not blocks:
+        return []
+    summary = f"{len(passed)} passed"
+    return ["", f"<details><summary>{summary}</summary>", *blocks, "", "</details>"]
+
+
+def baseline_note(baseline: Baseline) -> str:
+    if not baseline.is_available:
+        return f"no `{baseline.name}` baseline: deltas are n/a"
+    run = f"last `{baseline.name}` run"
+    return (
+        f"compared with the [{run}]({baseline.run_url})"
+        if baseline.run_url
+        else (f"compared with the {run}")
+    )
 
 
 def render(
     fragments: dict[Analysis, Fragment],
     job_results: dict[str, str],
+    *,
+    baseline: Baseline,
     footer: str = "",
 ) -> str:
-    results = [evaluate(section, fragments, job_results) for section in SECTIONS]
-    lines = [MARKER, "## 🔍 Quality Report", "", verdict(results), ""]
-    lines += ["| Analysis | Status |", "| --- | --- |"]
-    lines += [f"| {r.title} | {r.status} |" for r in results]
-    for result in results:
-        lines += render_section(result)
-    if footer:
-        lines += ["", "---", footer]
+    results = [evaluate(section, fragments, job_results, baseline) for section in SECTIONS]
+    lines = [MARKER, "## Quality Report", "", *verdict(results, baseline.name)]
+    lines += render_problems(results, baseline.name)
+    lines += render_table(results, baseline.name)
+    lines += render_passed(results)
+    notes = " · ".join(part for part in (footer, baseline_note(baseline)) if part)
+    lines += ["", "---", f"<sub>{notes}</sub>"]
     return "\n".join(lines) + "\n"
 
 
@@ -709,15 +1033,28 @@ def run_command(analysis: Analysis, command: list[str], directory: Path, advisor
     return 0 if advisory else exit_code
 
 
-def footer_from_environment() -> str:
+def run_url(run_id: str) -> str:
     repository = os.environ.get("GITHUB_REPOSITORY")
-    run_id = os.environ.get("GITHUB_RUN_ID")
     if not repository or not run_id:
         return ""
     server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+    return f"{server}/{repository}/actions/runs/{run_id}"
+
+
+def footer_from_environment(now: datetime) -> str:
     sha = os.environ.get("QUALITY_REPORT_SHA", os.environ.get("GITHUB_SHA", ""))[:7]
-    commit = f"commit `{sha}` · " if sha else ""
-    return f"{commit}[CI run]({server}/{repository}/actions/runs/{run_id})"
+    url = run_url(os.environ.get("GITHUB_RUN_ID", ""))
+    parts = [
+        f"commit `{sha}`" if sha else "",
+        now.astimezone(UTC).strftime(TIMESTAMP_FORMAT),
+        f"[workflow run]({url})" if url else "",
+    ]
+    return " · ".join(part for part in parts if part)
+
+
+def load_baseline(directory: Path | None, name: str) -> Baseline:
+    fragments = load_fragments(directory) if directory else {}
+    return Baseline(name, fragments, run_url(os.environ.get("QUALITY_REPORT_BASE_RUN_ID", "")))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -731,6 +1068,10 @@ def build_parser() -> argparse.ArgumentParser:
     render_parser.add_argument("--dir", type=Path, default=DEFAULT_DIRECTORY)
     render_parser.add_argument("--needs-json", default="")
     render_parser.add_argument("--output", type=Path)
+    render_parser.add_argument(
+        "--base-dir", type=Path, help="fragments of the last run on the base branch, if any"
+    )
+    render_parser.add_argument("--base-name", default=DEFAULT_BASE_NAME)
     return parser
 
 
@@ -747,7 +1088,10 @@ def main() -> int:
             return 2
         return run_command(args.analysis, command, args.dir, args.advisory)
     report = render(
-        load_fragments(args.dir), parse_job_results(args.needs_json), footer_from_environment()
+        load_fragments(args.dir),
+        parse_job_results(args.needs_json),
+        baseline=load_baseline(args.base_dir, args.base_name or DEFAULT_BASE_NAME),
+        footer=footer_from_environment(datetime.now(UTC)),
     )
     if args.output:
         args.output.write_text(report)
