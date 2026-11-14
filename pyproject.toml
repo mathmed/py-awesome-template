@@ -18,6 +18,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "bandit>=1.9.4",
+    "deptry>=0.25.1",
     "faker>=40.39.0",
     "httpx2>=2.13.1",
     "import-linter>=2.15",
@@ -72,6 +73,15 @@ paths = ["app"]
 max-absolute = "B"
 max-modules = "A"
 max-average = "A"
+
+[tool.deptry]
+known_first_party = ["app", "scripts", "tests"]
+# Agent worktrees (.claude/worktrees) are whole checkouts of the repository inside this one.
+extend_exclude = ["\\.claude"]
+
+# Loaded by the uvicorn CLI (Makefile, docker/entrypoint.sh, scripts/api_server.sh), never imported.
+[tool.deptry.per_rule_ignores]
+DEP002 = ["uvicorn"]
 
 [tool.importlinter]
 root_package = "app"
