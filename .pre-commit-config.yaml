@@ -29,6 +29,13 @@ repos:
         types: [python]
         pass_filenames: false
 
+      - id: deptry
+        name: deptry (declared dependencies)
+        entry: uv run deptry .
+        language: system
+        types: [python]
+        pass_filenames: false
+
       - id: vulture
         name: vulture (dead code)
         entry: uv run vulture app --min-confidence 80
