@@ -1,9 +1,11 @@
-name: Risk label
+name: PR labels
 
-# Checks that the PR has exactly one known risk:<level> label (scripts/risk.py). The level is a judgement of
-# the pr-writer agent or of a person, never derived from the files touched. It lives outside ci.yml because
-# it must also run when labels change, which would otherwise re-run every analysis; for the same reason it is
-# not part of the Quality Report. The pr-writer agent applies the label when it opens the PR.
+# Checks that the PR has exactly one known risk:<level> label and exactly one known deploy:<kind> label
+# (scripts/pr_labels.py). Both are a judgement of the pr-writer agent or of a person, never derived from the
+# files touched. It lives outside ci.yml because it must also run when labels change, which would otherwise
+# re-run every analysis; for the same reason it is not part of the Quality Report. The pr-writer agent applies
+# both labels when it opens the PR. Formerly risk-label.yml (job risk-label): a branch protection rule that
+# required the old check must require `pr-labels` instead.
 on:
   pull_request:
     types: [opened, reopened, synchronize, labeled, unlabeled]
@@ -18,11 +20,11 @@ permissions:
 # would let an older run finish last and decide the check. GitHub keeps one pending run per group, so 3+
 # events at once (Dependabot adds three labels) still cancel the pending ones in between
 concurrency:
-  group: risk-label-${{ github.event.pull_request.number }}
+  group: pr-labels-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
-  risk-label:
+  pr-labels:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -31,7 +33,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked
-      - name: Exactly one known risk label
+      - name: Exactly one known risk label and one known deploy label
         env:
           # Passed through the environment, never interpolated into the script
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -41,4 +43,4 @@ jobs:
         # every PR saw no labels (and a run from an older event could judge labels that already changed)
         run: |
           labels=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels?per_page=100" --jq '[.[].name]')
-          uv run --locked python scripts/risk.py check --labels-json "$labels"
+          uv run --locked python scripts/pr_labels.py check --labels-json "$labels"
