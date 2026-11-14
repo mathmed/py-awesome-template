@@ -1,30 +1,14 @@
-## Risk
-**<low | medium | high | critical>** — <one line: why>
-<!-- Most PRs are low or medium. Any deploy step other than "None" is at least medium. High or critical needs
-one concrete sentence naming what can break; without it, lower the level. -->
-
+<!-- High or critical risk only, as the first line: Risk high: <what can break, for whom>. Otherwise the
+risk lives only in the risk:<level> label. Stacked PRs only: Stacked on #<number>; merge it first. -->
 ## Summary
-<one sentence: what changes in behavior, and why>
+<1-2 sentences: what changes and why. Must stand alone. End with what was not verified, only if it matters.>
 
-## Behavior
-<!-- Max 5, most critical first. Plain words for a person who has not read the code: rules and observable
-behavior, short and objective. No backticks, paths, file, function or test names: evidence goes in Look here. -->
-- **<rule or behavior, in plain words>:** <before> → <after>
+<!-- ONE visual, picked by the type of change, or none when the summary says it all:
+rule or behavior: What | Before | After table (max 3 rows, 12 words per cell); flow or state: small Mermaid
+diagram; numbers or limits: before/after values table; contract or config: diff block of max 15 lines. -->
+| What | Before | After |
+| ---- | ------ | ----- |
+| <rule, in plain words> | <before> | <after> |
 
-**Unchanged:** <what a reviewer might fear broke, or "behavior-preserving refactor">
-
-## Look here
-<!-- Most important first. The only place for file, function and test references. Every Behavior item has its
-evidence here: the test that asserts it, or the code that implements it when no test does (one item may
-cover several Behavior items). Each item says which behavior it proves or contains and why it deserves human
-eyes. Also list changes to pipeline config or checks, mismatches and anything that departs from the task. -->
-1. `<test or file:function>` — <which behavior it proves or contains, and why it deserves human eyes>
-
-## Deploy steps
-<!-- Always present. If nothing is needed, write: None: normal merge and deploy. -->
-- [ ] Before merge: <migration order, new env vars or secrets, flags>
-- [ ] After deploy: <backfill, external config, checks>
-- [ ] Rollback: <how to revert>
-
-**Not verified:** <what the author could not check, or "nothing">
-<!-- Only if the diff contradicts the author's handoff notes, add: **Mismatch:** <what the notes said vs what the diff does> -->
+<!-- Only with a real step (migration, env var or secret, flag, merge order, external config); else delete. -->
+**Deploy:** <the step; rollback only when it is not a plain revert>

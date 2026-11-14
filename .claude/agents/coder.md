@@ -71,26 +71,15 @@ Only when you are told that `pr-writer` failed (or it cannot be run), open the P
 never blocked:
 
 1. `gh pr list --head <branch> --state open` — if a PR already exists, do not open another one.
-2. Open it with the headings of `.github/pull_request_template.md` and a minimal body:
+2. Open it with a minimal body in the shape of `.github/pull_request_template.md`:
    `gh pr create --base main --head <branch> --title "<type>: <short description>" --body-file <file>`.
 
 ```markdown
-## Risk
-**unassessed** — pr-writer failed; the reviewer assigns the level and the `risk:<level>` label.
-
 ## Summary
-<one sentence: what changes in behavior, and why>
+<1-2 sentences: what changes and why>. Risk unassessed: pr-writer failed, so review commit by commit and set
+the `risk:<level>` label. <The important Not verified items from the handoff notes, if any.>
 
-## Behavior
-Not filled: pr-writer failed. Review commit by commit.
-
-## Look here
-Not filled: pr-writer failed.
-
-## Deploy steps
-<the Deploy notes from the handoff notes, or "None: normal merge and deploy.">
-
-**Not verified:** <the Not verified list from the handoff notes>
+**Deploy:** <the Deploy notes from the handoff notes; omit this line when there are none>
 ```
 
 Do not add a `risk:` label: the Risk label check stays red until the reviewer sets one. Return the PR URL.

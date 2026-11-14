@@ -172,7 +172,7 @@ Comments are read with `tokenize` and tests with `ast`, so the same text inside 
 - **a count went down**: the check also fails until you run `make suppressions-update` and commit the lower baseline in the same PR, so the improvement is locked in and reviewed;
 - **counts match**: the check passes.
 
-It runs as a pre-commit hook, in `make hooks` and as the `suppressions` CI job. Configuration that disables checks globally (`pyproject.toml`, `.pre-commit-config.yaml`, the workflows) is not counted here: the `pr-writer` agent always lists pipeline changes under **Look here**, so a reviewer sees when a gate changes.
+It runs as a pre-commit hook, in `make hooks` and as the `suppressions` CI job. Configuration that disables checks globally (`pyproject.toml`, `.pre-commit-config.yaml`, the workflows) is not counted here: the `pr-writer` agent always names a changed gate in the PR summary, so a reviewer sees when a gate changes.
 
 ### Risk label
 
@@ -266,16 +266,15 @@ Create an empty `.local_dev` file at the root to work directly on your local bra
 Reading AI-written diffs is the bottleneck, so the PR description tells the reviewer how much attention the PR deserves and what changed in behavior and in rules, written by an agent that did not write the code:
 
 1. **`coder`** implements on a branch, runs every check, commits one logical step per commit, pushes and writes **handoff notes** to `.handoff/<branch>.md` (gitignored): the task verbatim, what was done and why, decisions, deploy notes and an explicit **Not verified** list. It does not open the PR or assess the risk.
-2. **`pr-writer`** (Opus) gets the task, the branch and the notes. It reads the diff commit by commit, writes behavior items per commit and aggregates them, and fills `.github/pull_request_template.md`:
-   - **Risk**: `low | medium | high | critical` with one line of why. It assigns the level itself by judgement, defaulting to `low` (no behavior change: docs, tests, CI, dependency patch or minor bumps, refactors covered by tests) or `medium` (new behavior, a new endpoint or option, or any deploy step). `high` is for changes that can break production or change existing behavior drastically but are recoverable by revert; `critical` for failures that take down what users or money depend on, leak data or cut the only way to recover. High and critical need one concrete sentence naming what can break, otherwise the level is lowered; touching pipeline files is not by itself a reason for `high`;
-   - **Summary**: one sentence on what changes in behavior and why;
-   - **Behavior**: at most five *before → after* items about rules and observable behavior, in plain words for someone who has not read the code: no file, function, test or code references;
-   - **Unchanged**;
-   - **Look here**: the only section with file references. Each item is a clickable permalink to the test or function that proves or contains a behavior change, and why it deserves human eyes. Every Behavior item has its evidence here; one without evidence goes under **Not verified** instead of getting an invented pointer;
-   - **Deploy steps** (always present; "None: normal merge and deploy." when nothing is needed) and an honest **Not verified**, plus a **Mismatch** line when the diff contradicts the handoff notes.
+2. **`pr-writer`** (Opus) gets the task, the branch and the notes. It reads the diff cold, commit by commit, checks every claim against the diff and the tests and reconciles them with the notes, then fills `.github/pull_request_template.md` with a short body (target 1,500 characters, hard cap 2,500) where no fact repeats:
+   - **Summary**: 1-2 sentences on what changes and why, standing alone. Its last sentence says what was not verified, only when that matters;
+   - **one visual**, picked by the type of change, or none when the summary says it all: a `What | Before | After` table (at most 3 rows, plain words) for a rule or behavior change, a small Mermaid diagram for a flow or state change, a before/after values table for numbers or limits, or a `diff` block of at most 15 lines for a contract or configuration change;
+   - **Deploy**: one line, only when there is a real step (migration, env var or secret, flag, merge order, external config).
+
+   The risk lives only in the `risk:<level>` label. It assigns the level itself by judgement, defaulting to `low` (no behavior change: docs, tests, CI, dependency patch or minor bumps, refactors covered by tests) or `medium` (new behavior, a new endpoint or option, or any deploy step). `high` is for changes that can break production or change existing behavior drastically but are recoverable by revert; `critical` for failures that take down what users or money depend on, leak data or cut the only way to recover. High and critical need one concrete sentence naming what can break, written as the first line of the body, otherwise the level is lowered; touching pipeline files is not by itself a reason for `high`. A **Mismatch** line appears only when the diff contradicts the handoff notes, and a stacked-PR line only when the PR is stacked.
 
    It opens the PR with the `risk:<level>` label (creating the labels if missing) and stops.
-3. **Fallback**: if `pr-writer` fails, `coder` opens the PR with a minimal body (summary plus the template headings, risk "unassessed", no label), so a failure never blocks delivery; the [Risk label](#risk-label) check stays red until a person sets the label.
+3. **Fallback**: if `pr-writer` fails, `coder` opens the PR with a minimal body (summary, risk "unassessed", deploy line if any, no label), so a failure never blocks delivery; the [Risk label](#risk-label) check stays red until a person sets the label.
 4. **Merge**: only the owner merges. The Quality Report comment and the Risk label check run on every PR.
 
 People opening PRs by hand get the same template from GitHub.
@@ -305,7 +304,7 @@ People opening PRs by hand get the same template from GitHub.
 | `.env.example`               | Environment variables template.                                         |
 | `.github/workflows/ci.yml`   | CI pipeline: one job per analysis plus the `quality-report` job.        |
 | `.github/dependabot.yaml`    | Dependency updates.                                                     |
-| `.github/pull_request_template.md` | PR description structure: risk, behavior, look here, deploy steps. |
+| `.github/pull_request_template.md` | PR description structure: summary, one visual, deploy line.     |
 | `.vscode/settings.json`      | Ruff format on save and pytest integration.                             |
 | `CLAUDE.md` / `AGENTS.md`    | Instructions for AI coding agents.                                      |
 | `.claude/`                   | Claude Code agents, permissions and hooks.                              |
