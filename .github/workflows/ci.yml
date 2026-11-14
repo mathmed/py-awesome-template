@@ -319,6 +319,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # Read the fragments of the last CI run on the base branch (deltas and "inherited from" marks)
+      actions: read
       # Minimum needed to upsert the PR comment. Read-only on fork PRs: the comment step then warns
       # instead of failing, and the report is still in the job summary.
       pull-requests: write
@@ -332,13 +334,38 @@ jobs:
           merge-multiple: true
           path: quality-fragments
 
+      # Best effort: the fragments of the last completed push run of this workflow on the base branch.
+      # Without them (no run yet, artifacts expired, API error) the report shows the deltas as n/a and
+      # marks no failure as inherited; it never fails because of the baseline.
+      - name: Download the base branch fragments
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch "$BASE_REF" \
+            --event push --status completed --limit 20 --json databaseId,conclusion \
+            --jq '[.[] | select(.conclusion == "success" or .conclusion == "failure")][0].databaseId // empty') || run_id=""
+          if [ -z "$run_id" ]; then
+            echo "::notice::No completed CI run on $BASE_REF: the Quality Report has no baseline."
+            exit 0
+          fi
+          if ! gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --pattern 'quality-fragment-*' --dir base-artifacts; then
+            echo "::notice::Could not download the fragments of run $run_id (expired?): the Quality Report has no baseline."
+            exit 0
+          fi
+          mkdir -p base-fragments
+          find base-artifacts -name '*.json' -exec cp {} base-fragments/ \;
+          echo "QUALITY_REPORT_BASE_RUN_ID=$run_id" >> "$GITHUB_ENV"
+
       - name: Build report
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           QUALITY_REPORT_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
           uv run --no-project python scripts/quality_report.py render \
-            --needs-json "$NEEDS_JSON" --output quality-report.md
+            --needs-json "$NEEDS_JSON" --base-dir base-fragments --base-name "$BASE_REF" \
+            --output quality-report.md
           cat quality-report.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Post report on the PR

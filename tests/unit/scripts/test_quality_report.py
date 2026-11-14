@@ -1,5 +1,7 @@
 import json
 from collections import Counter
+from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -7,13 +9,16 @@ import pytest
 from scripts import quality_report, suppressions
 from scripts.quality_report import (
     Analysis,
+    Baseline,
     Fragment,
+    Metric,
     Status,
     analyze_bandit,
     analyze_deptry,
     analyze_import_linter,
     analyze_mutation,
     analyze_oasdiff,
+    analyze_pip_audit,
     analyze_pytest,
     analyze_schemathesis,
     analyze_smoke,
@@ -40,6 +45,7 @@ FAIL Required test coverage of 80.0% not reached. Total coverage: 50.00%
 ============================== 34 passed in 4.18s ==============================
 """
 PYTEST_FAILED = """FAILED tests/unit/test_a.py::test_should_x - assert 1 == 2
+ERROR tests/unit/test_b.py::test_should_y
 ========================= 1 failed, 33 passed in 4.18s =========================
 """
 IMPORT_LINTER_OK = """Application layers KEPT
@@ -121,6 +127,14 @@ SCHEMATHESIS_NOT_STARTED = """>> starting the API on http://127.0.0.1:18000 (ENV
 ValidationError: env
 """
 
+PIP_AUDIT_FOUND = """Found 3 known vulnerabilities in 2 packages
+Name       Version ID              Fix Versions
+---------- ------- --------------- ------------
+filelock   4.0.4   CVE-2026-112940 4.2.1
+filelock   4.0.4   CVE-2026-112936 4.0.9
+msgpack    1.2.2   CVE-2026-114613
+"""
+
 OASDIFF_NO_CHANGES = """Comparing the OpenAPI schema of HEAD with origin/main (merge base 6a0421faff05)
 No changes detected
 """
@@ -187,33 +201,126 @@ def all_ok_fragments() -> dict[Analysis, Fragment]:
     return {analysis: fragment(analysis, outputs.get(analysis, "")) for analysis in Analysis}
 
 
+NO_BASELINE = Baseline("main", {})
+NOW = datetime(2026, 11, 13, 14, 5, tzinfo=UTC)
+
+
+def failing_pip_audit() -> Fragment:
+    return fragment(Analysis.PIP_AUDIT, PIP_AUDIT_FOUND, 1)
+
+
+def pytest_with_coverage(coverage: str) -> str:
+    return PYTEST_OK.replace("Total coverage: 100.00%", f"Total coverage: {coverage}%")
+
+
 class TestPytest:
-    def test_should_report_counts_and_coverage(self) -> None:
+    def test_should_report_tests_and_coverage_metric(self) -> None:
         finding = analyze_pytest(fragment(Analysis.PYTEST, PYTEST_OK))
 
         assert finding.status == Status.OK
-        assert "34 passed, 0 failed, 34 total" in finding.summary
-        assert "100.00% (minimum 80.0%)" in finding.summary
+        assert finding.summary == "34 tests"
+        assert finding.metric == Metric("coverage", Decimal("100.00"), "%")
         assert "app/a.py" in finding.details
+
+    def test_should_count_skipped_tests(self) -> None:
+        output = PYTEST_OK.replace("34 passed in", "33 passed, 1 skipped in")
+
+        assert analyze_pytest(fragment(Analysis.PYTEST, output)).summary == "34 tests (1 skipped)"
 
     def test_should_fail_when_coverage_is_below_minimum(self) -> None:
         finding = analyze_pytest(fragment(Analysis.PYTEST, PYTEST_LOW_COVERAGE, 1))
 
         assert finding.status == Status.FAILED
-        assert "below the minimum" in finding.summary
+        assert finding.summary == "34 tests · coverage below the 80.0% minimum"
+        assert finding.metric == Metric("coverage", Decimal("50.00"), "%")
 
-    def test_should_fail_when_a_test_fails(self) -> None:
+    def test_should_list_the_failed_tests_with_their_message(self) -> None:
         finding = analyze_pytest(fragment(Analysis.PYTEST, PYTEST_FAILED, 1))
 
         assert finding.status == Status.FAILED
-        assert "1 failed" in finding.summary
-        assert "test_should_x" in finding.details
+        assert finding.summary == "1 of 34 tests failed"
+        assert finding.is_markdown
+        assert finding.details.startswith(
+            "- `tests/unit/test_a.py::test_should_x`: assert 1 == 2\n"
+            "- `tests/unit/test_b.py::test_should_y`\n"
+        )
+        assert "<details><summary>Output</summary>" in finding.details
+
+    def test_should_truncate_long_failure_messages_and_lists(self) -> None:
+        lines = [f"FAILED tests/t.py::test_{index} - {'x' * 500}" for index in range(32)]
+        output = "\n".join([*lines, "==== 32 failed in 1.00s ===="])
+
+        finding = analyze_pytest(fragment(Analysis.PYTEST, output, 1))
+
+        listed = finding.details.split("<details>")[0]
+        assert "x" * quality_report.MAX_FAILURE_MESSAGE_CHARS not in listed
+        assert "- ... and 2 more" in listed
+        assert "`tests/t.py::test_31`" not in listed
+
+    def test_should_show_the_raw_output_when_no_failed_test_is_listed(self) -> None:
+        output = "==== 1 failed in 1.00s ===="
+
+        finding = analyze_pytest(fragment(Analysis.PYTEST, output, 1))
+
+        assert finding.details == f"```text\n{output}\n```"
 
     def test_should_fail_when_pytest_crashes(self) -> None:
         finding = analyze_pytest(fragment(Analysis.PYTEST, "ImportError", 2))
 
         assert finding.status == Status.FAILED
-        assert "before finishing" in finding.summary
+        assert finding.summary == "pytest failed before finishing"
+        assert "ImportError" in finding.details
+
+
+class TestPipAudit:
+    def test_should_report_no_vulnerabilities(self) -> None:
+        finding = analyze_pip_audit(fragment(Analysis.PIP_AUDIT, "No known vulnerabilities found"))
+
+        assert finding.status == Status.OK
+        assert finding.summary == "no known vulnerabilities"
+
+    def test_should_list_each_vulnerability_with_the_fixed_version(self) -> None:
+        finding = analyze_pip_audit(failing_pip_audit())
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == "3 vulnerabilities in 2 packages"
+        assert finding.is_markdown
+        assert finding.details.splitlines()[:5] == [
+            "| Package | Version | CVE | Fixed in |",
+            "| --- | --- | --- | --- |",
+            "| filelock | 4.0.4 | CVE-2026-112940 | 4.2.1 |",
+            "| filelock | 4.0.4 | CVE-2026-112936 | 4.0.9 |",
+            "| msgpack | 1.2.2 | CVE-2026-114613 | no fix yet |",
+        ]
+        assert "`uv lock --upgrade-package filelock --upgrade-package msgpack`" in finding.details
+
+    def test_should_truncate_a_long_list_of_vulnerabilities(self) -> None:
+        rows = [
+            f"pkg{index:02} 1.0 CVE-{index} 2.0"
+            for index in range(quality_report.MAX_VULNERABILITIES_LISTED + 1)
+        ]
+        header = "Found 51 known vulnerabilities in 51 packages\nName Version ID Fix Versions\n---"
+        output = "\n".join([header, *rows])
+
+        finding = analyze_pip_audit(fragment(Analysis.PIP_AUDIT, output, 1))
+
+        assert "... and 1 more" in finding.details
+        assert "| pkg50 |" not in finding.details
+
+    def test_should_keep_the_raw_output_when_the_table_is_not_recognized(self) -> None:
+        output = "Found 1 known vulnerability in 1 package\nsomething else"
+
+        finding = analyze_pip_audit(fragment(Analysis.PIP_AUDIT, output, 1))
+
+        assert finding.summary == "1 vulnerability in 1 package"
+        assert not finding.is_markdown
+        assert finding.details == output
+
+    def test_should_report_a_crash(self) -> None:
+        finding = analyze_pip_audit(fragment(Analysis.PIP_AUDIT, "network down", 1))
+
+        assert finding.summary == "pip-audit failed"
+        assert finding.details == "network down"
 
 
 class TestImportLinter:
@@ -221,24 +328,31 @@ class TestImportLinter:
         finding = analyze_import_linter(fragment(Analysis.IMPORT_LINTER, IMPORT_LINTER_OK))
 
         assert finding.status == Status.OK
-        assert "2 contracts kept" in finding.summary
+        assert finding.summary == "2 contracts kept"
         assert "Domain does not depend on outer layers" in finding.details
 
-    def test_should_show_broken_contract_and_violating_import(self) -> None:
+    def test_should_show_the_broken_contract_and_violating_import(self) -> None:
         finding = analyze_import_linter(fragment(Analysis.IMPORT_LINTER, IMPORT_LINTER_BROKEN, 1))
 
         assert finding.status == Status.FAILED
-        assert "**Domain does not depend on outer layers**" in finding.summary
+        assert finding.summary == "1 of 2 contracts broken"
+        assert "- **Domain does not depend on outer layers**" in finding.details
+        assert "```text\nDomain does not depend on outer layers\n---" in finding.details
+        assert finding.details.count("Broken contracts") == 1
         assert "app.domain.usecases.x -> app.infra.db" in finding.details
+
+    def test_should_fail_when_no_contract_was_evaluated(self) -> None:
+        finding = analyze_import_linter(fragment(Analysis.IMPORT_LINTER, "config error", 1))
+
+        assert finding.summary == "import-linter failed before evaluating the contracts"
 
 
 class TestSmoke:
-    def test_should_report_boot_time_and_endpoints(self) -> None:
+    def test_should_report_boot_time(self) -> None:
         finding = analyze_smoke(fragment(Analysis.SMOKE, SMOKE_OK))
 
         assert finding.status == Status.OK
-        assert "1.234s" in finding.summary
-        assert "/health ✅ · /ready ✅" in finding.summary
+        assert finding.summary == "healthy in 1.234s · /health and /ready answered"
         assert finding.details == ""
 
     def test_should_include_logs_only_when_failed(self) -> None:
@@ -255,9 +369,7 @@ class TestSchemathesis:
         finding = analyze_schemathesis(fragment(Analysis.SCHEMATHESIS, SCHEMATHESIS_OK))
 
         assert finding.status == Status.OK
-        assert finding.summary == (
-            "No contract violations · 54 test cases on 3 operations · seed 1"
-        )
+        assert finding.summary == "54 cases on 3 operations · seed 1"
         assert finding.details == ""
 
     def test_should_list_failed_checks_with_the_failures_and_api_logs(self) -> None:
@@ -266,7 +378,7 @@ class TestSchemathesis:
         assert finding.status == Status.FAILED
         assert finding.summary == (
             "2 failures: Server error (1); Undocumented HTTP status code (1)"
-            " · 29 test cases on 3 operations · seed 1"
+            " · 29 cases on 3 operations · seed 1"
         )
         assert finding.details.startswith("_" * 33 + " GET /example")
         assert "curl -X GET" in finding.details
@@ -278,14 +390,14 @@ class TestSchemathesis:
 
         assert finding.status == Status.FAILED
         assert finding.summary == (
-            "Contract test did not run: the API process exited before becoming healthy"
+            "contract test did not run: the API process exited before becoming healthy"
         )
         assert finding.details == "ValidationError: env"
 
     def test_should_fail_with_the_raw_output_when_nothing_is_recognized(self) -> None:
         finding = analyze_schemathesis(fragment(Analysis.SCHEMATHESIS, "uv: not found", 127))
 
-        assert finding.summary == "Contract test did not run"
+        assert finding.summary == "contract test did not run"
         assert finding.details == "uv: not found"
 
 
@@ -294,7 +406,7 @@ class TestOasdiff:
         finding = analyze_oasdiff(fragment(Analysis.OASDIFF, OASDIFF_NO_CHANGES))
 
         assert finding.status == Status.OK
-        assert finding.summary == "No API changes"
+        assert finding.summary == "no API changes"
 
     def test_should_list_additive_changes_as_ok(self) -> None:
         finding = analyze_oasdiff(fragment(Analysis.OASDIFF, OASDIFF_INFO_ONLY))
@@ -354,7 +466,9 @@ class TestMutation:
         finding = analyze_mutation(fragment(Analysis.MUTATION, output))
 
         assert finding.status == Status.OK
-        assert "score 90.0% (threshold 90.0%)" in finding.summary
+        assert finding.summary == "9 of 10 mutants killed (threshold 90.0%)"
+        assert finding.metric == Metric("score", Decimal("90.0"), "%")
+        assert finding.is_markdown
         assert "| `app/domain/x.py` | `X.run` | survived |" in finding.details
 
     def test_should_fail_below_threshold(self) -> None:
@@ -362,13 +476,13 @@ class TestMutation:
 
         assert finding.status == Status.FAILED
 
-    def test_should_report_no_domain_change_as_skipped(self) -> None:
+    def test_should_report_no_domain_change_as_skipped_with_the_reason(self) -> None:
         output = mutation_output(100.0, [], skipped=True)
 
         finding = analyze_mutation(fragment(Analysis.MUTATION, output))
 
         assert finding.status == Status.SKIPPED
-        assert "No domain file changed" in finding.summary
+        assert finding.summary == "no domain file changed"
 
     def test_should_fail_when_mutmut_crashes_without_result(self) -> None:
         finding = analyze_mutation(fragment(Analysis.MUTATION, "CalledProcessError", 1))
@@ -385,7 +499,8 @@ class TestSuppressions:
         finding = analyze_suppressions(fragment(Analysis.SUPPRESSIONS, SUPPRESSIONS_OK))
 
         assert finding.status == Status.OK
-        assert finding.summary == "1 suppression, matching the baseline"
+        assert finding.summary == "baseline matched"
+        assert finding.metric == Metric("suppressions", Decimal(1))
         assert finding.details == "nosec: 1"
 
     def test_should_list_new_suppressions_with_file_and_lines(self) -> None:
@@ -398,6 +513,8 @@ class TestSuppressions:
 
         assert finding.status == Status.FAILED
         assert finding.summary == "1 new suppression above the baseline"
+        assert finding.metric == Metric("suppressions", Decimal(2))
+        assert finding.is_markdown
         assert "| `app/h.py` | nosec | 1 → 2 | 7, 9 |" in finding.details
 
     def test_should_ask_to_update_a_stale_baseline(self) -> None:
@@ -430,6 +547,60 @@ class TestSuppressions:
         assert "SyntaxError: boom" in finding.details
 
 
+class TestOneLineDetails:
+    @pytest.mark.parametrize(
+        ("analysis", "output", "summary"),
+        [
+            (Analysis.RUFF_CHECK, "All checks passed!", "no lint issues"),
+            (Analysis.RUFF_FORMAT, "47 files already formatted", "47 files formatted"),
+            (Analysis.RUFF_FORMAT, "1 file already formatted", "1 file formatted"),
+            (Analysis.RUFF_FORMAT, "", ""),
+            (Analysis.MYPY, "Success: no issues found in 35 source files", "35 files"),
+            (Analysis.BANDIT, "Total lines of code: 244", "no issues · 244 lines scanned"),
+            (Analysis.BANDIT, "No issues identified.", "no issues"),
+            (Analysis.DEPTRY, "Scanning 27 files...\nSuccess!", "27 files · no dependency issues"),
+            (Analysis.DEPTRY, "Success!", "no dependency issues"),
+            (Analysis.VULTURE, "", "no dead code"),
+            (Analysis.XENON, "", "within the threshold"),
+        ],
+    )
+    def test_should_summarize_a_passing_analysis_in_one_line(
+        self, analysis: Analysis, output: str, summary: str
+    ) -> None:
+        finding = quality_report.ANALYZERS[analysis](fragment(analysis, output))
+
+        assert finding.status == Status.OK
+        assert finding.summary == summary
+
+    @pytest.mark.parametrize(
+        ("analysis", "output", "summary"),
+        [
+            (Analysis.RUFF_CHECK, "Found 3 errors.", "3 lint issues"),
+            (Analysis.RUFF_CHECK, "boom", "lint failed"),
+            (Analysis.RUFF_FORMAT, "Would reformat: a.py", "1 file to format (`make format-code`)"),
+            (Analysis.RUFF_FORMAT, "boom", "format check failed"),
+            (Analysis.MYPY, "Found 2 errors in 1 file", "2 type errors"),
+            (Analysis.MYPY, "boom", "mypy failed"),
+            (Analysis.BANDIT, ">> Issue: [B101]\n>> Issue: [B102]", "2 issues"),
+            (Analysis.BANDIT, "boom", "bandit failed"),
+            (
+                Analysis.XENON,
+                'ERROR:xenon:block "app.py:1 f" has a rank of C',
+                "1 block above the threshold",
+            ),
+            (Analysis.XENON, "boom", "complexity above the threshold"),
+        ],
+    )
+    def test_should_summarize_a_failing_analysis_in_one_line(
+        self, analysis: Analysis, output: str, summary: str
+    ) -> None:
+        finding = quality_report.ANALYZERS[analysis](fragment(analysis, output, 1))
+
+        assert finding.status == Status.FAILED
+        assert finding.summary == summary
+        assert finding.details == output
+
+
 class TestAdvisoryTools:
     def test_should_warn_on_dead_code_when_advisory(self) -> None:
         advisory = Fragment(Analysis.VULTURE, 3, "app/a.py:1: unused function 'f'", advisory=True)
@@ -437,13 +608,13 @@ class TestAdvisoryTools:
         finding = analyze_vulture(advisory)
 
         assert finding.status == Status.WARNING
-        assert "1 dead code item" in finding.summary
+        assert finding.summary == "1 dead code item (advisory, does not block)"
 
-    def test_should_be_ok_when_dependencies_are_clean(self) -> None:
-        finding = analyze_deptry(fragment(Analysis.DEPTRY, "Success! No dependency issues found."))
+    def test_should_fail_on_dead_code_when_not_advisory(self) -> None:
+        finding = analyze_vulture(fragment(Analysis.VULTURE, "app/a.py:1: unused 'f'", 3))
 
-        assert finding.status == Status.OK
-        assert finding.summary == "Every import is declared and every dependency is used"
+        assert finding.status == Status.FAILED
+        assert finding.summary == "1 dead code item"
 
     def test_should_fail_with_dependency_issue_count(self) -> None:
         output = "pyproject.toml: DEP002 'x' defined as a dependency but not used\nFound 2 dependency issues."
@@ -465,92 +636,387 @@ class TestAdvisoryTools:
         assert finding.status == Status.FAILED
         assert finding.summary == "deptry failed"
 
-    def test_should_be_ok_without_dead_code(self) -> None:
-        assert analyze_vulture(fragment(Analysis.VULTURE)).status == Status.OK
-
     def test_should_ignore_uv_environment_warning(self) -> None:
         noisy = "warning: `VIRTUAL_ENV=/x` does not match the project environment path"
 
         assert analyze_vulture(fragment(Analysis.VULTURE, noisy)).status == Status.OK
 
-    def test_should_fail_complexity_above_threshold(self) -> None:
-        output = 'ERROR:xenon:block "app.py:1 f" has a rank of C'
-
-        finding = analyze_xenon(fragment(Analysis.XENON, output, 1))
-
-        assert finding.status == Status.FAILED
-        assert "1 complexity violation" in finding.summary
-
     def test_should_count_bandit_issues(self) -> None:
         finding = analyze_bandit(fragment(Analysis.BANDIT, ">> Issue: [B101]\n>> Issue: [B102]", 1))
 
-        assert "2 issues" in finding.summary
+        assert finding.summary == "2 issues"
 
+    def test_should_count_xenon_blocks(self) -> None:
+        output = 'ERROR:xenon:block "app.py:1 f" has a rank of C'
 
-class TestRender:
-    def test_should_render_all_ok(self) -> None:
-        report = render(all_ok_fragments(), {})
-
-        assert report.startswith(quality_report.MARKER)
-        assert "✅ **All good**" in report
-        for section in quality_report.SECTIONS:
-            assert f"| {section.title} | ✅ |" in report
-
-    def test_should_keep_sections_in_the_requested_order(self) -> None:
-        report = render(all_ok_fragments(), {})
-
-        positions = [report.index(f"### ✅ {s.title}") for s in quality_report.SECTIONS]
-        assert positions == sorted(positions)
-
-    def test_should_mark_missing_fragment_of_failed_job_as_failed(self) -> None:
-        fragments = all_ok_fragments()
-        del fragments[Analysis.MYPY]
-
-        report = render(fragments, {"types": "failure"})
-
-        assert "❌ **Failed**: 1 analysis failed" in report
-        assert "Job `types` ended as `failure` without producing a result" in report
-
-    @pytest.mark.parametrize("result", ["cancelled", "skipped"])
-    def test_should_mark_missing_fragment_of_cancelled_job_as_skipped(self, result: str) -> None:
-        fragments = all_ok_fragments()
-        del fragments[Analysis.SMOKE]
-
-        report = render(fragments, {"smoke": result})
-
-        assert "| Boot smoke (/health and /ready) | ⏭️ |" in report
-        assert "✅ **All good** (1 analysis not run)" in report
-
-    def test_should_take_the_worst_status_in_multi_analysis_sections(self) -> None:
-        fragments = all_ok_fragments()
-        fragments[Analysis.PIP_AUDIT] = fragment(
-            Analysis.PIP_AUDIT, "Found 2 known vulnerabilities", 1
+        assert analyze_xenon(fragment(Analysis.XENON, output, 1)).summary == (
+            "1 block above the threshold"
         )
 
-        report = render(fragments, {})
 
-        assert "### ❌ Security (bandit + pip-audit)" in report
-        assert "- ✅ **bandit**: No security issues" in report
-        assert "- ❌ **pip-audit**: 2 vulnerabilities" in report
+class TestMetric:
+    @pytest.mark.parametrize(
+        ("current", "base", "expected"),
+        [
+            ("100.00", "100.00", "coverage 100.00% (=)"),
+            ("91.2", "93.3", "coverage 91.2% (↓2.1)"),
+            ("95.50", "94.00", "coverage 95.50% (↑1.50)"),
+        ],
+    )
+    def test_should_render_the_variation_against_the_base(
+        self, current: str, base: str, expected: str
+    ) -> None:
+        metric = Metric("coverage", Decimal(current), "%")
 
-    def test_should_wrap_long_output_in_collapsible_details(self) -> None:
+        assert metric.render(Metric("coverage", Decimal(base), "%")) == expected
+
+    def test_should_render_na_without_a_base(self) -> None:
+        assert Metric("suppressions", Decimal(3)).render(None) == "suppressions 3 (n/a)"
+
+
+class TestVerdict:
+    def test_should_use_a_tip_alert_when_everything_passed(self) -> None:
+        report = render(all_ok_fragments(), {}, baseline=NO_BASELINE)
+
+        assert report.startswith(f"{quality_report.MARKER}\n## Quality Report\n\n")
+        assert "> [!TIP]\n> ✅ 14 passed\n" in report
+
+    def test_should_use_a_caution_alert_with_the_counts_when_something_failed(self) -> None:
         fragments = all_ok_fragments()
-        fragments[Analysis.MYPY] = fragment(Analysis.MYPY, "x" * 20000, 1)
+        fragments[Analysis.PIP_AUDIT] = failing_pip_audit()
+        fragments[Analysis.MUTATION] = fragment(
+            Analysis.MUTATION, mutation_output(100.0, [], skipped=True)
+        )
 
-        report = render(fragments, {})
+        report = render(fragments, {}, baseline=NO_BASELINE)
 
-        assert "<details><summary>Output</summary>" in report
-        assert "[...truncado...]" in report
-        assert len(report) < 30000
+        assert "> [!CAUTION]\n> ❌ 1 failed · ✅ 12 passed · ⏭️ 1 skipped\n" in report
 
-    def test_should_not_let_output_break_the_code_fence(self) -> None:
+    def test_should_use_a_warning_alert_when_only_warnings(self) -> None:
+        fragments = all_ok_fragments()
+        fragments[Analysis.VULTURE] = Fragment(Analysis.VULTURE, 3, "app/a.py:1: x", True)
+
+        report = render(fragments, {}, baseline=NO_BASELINE)
+
+        assert "> [!WARNING]\n> ⚠️ 1 warning · ✅ 13 passed\n" in report
+
+    def test_should_say_when_every_failure_is_inherited_from_the_base(self) -> None:
+        fragments = all_ok_fragments()
+        fragments[Analysis.PIP_AUDIT] = failing_pip_audit()
+        fragments[Analysis.MYPY] = fragment(Analysis.MYPY, "Found 1 error", 1)
+        baseline = Baseline("main", dict(fragments))
+
+        report = render(fragments, {}, baseline=baseline)
+
+        assert "> ❌ 2 failed, all inherited from `main` · ✅ 12 passed\n" in report
+
+    def test_should_count_inherited_failures_when_only_some_are(self) -> None:
+        fragments = all_ok_fragments()
+        baseline = Baseline("main", {**fragments, Analysis.PIP_AUDIT: failing_pip_audit()})
+        fragments[Analysis.PIP_AUDIT] = failing_pip_audit()
+        fragments[Analysis.MYPY] = fragment(Analysis.MYPY, "Found 1 error", 1)
+
+        report = render(fragments, {}, baseline=baseline)
+
+        assert "> ❌ 2 failed (1 inherited from `main`) · ✅ 12 passed\n" in report
+
+    def test_should_say_inherited_without_all_for_a_single_failure(self) -> None:
+        fragments = all_ok_fragments()
+        fragments[Analysis.PIP_AUDIT] = failing_pip_audit()
+
+        report = render(fragments, {}, baseline=Baseline("develop", dict(fragments)))
+
+        assert "> ❌ 1 failed, inherited from `develop` · ✅ 13 passed\n" in report
+
+
+class TestProblems:
+    def test_should_show_failures_open_before_the_table(self) -> None:
+        fragments = all_ok_fragments()
+        fragments[Analysis.PIP_AUDIT] = failing_pip_audit()
+
+        report = render(fragments, {}, baseline=NO_BASELINE)
+
+        failure = report.index("### ❌ Vulnerable dependencies (pip-audit)")
+        assert failure < report.index("| Area | Check | Status | Detail |")
+        section = report[failure : report.index("| Area |")]
+        assert "3 vulnerabilities in 2 packages\n" in section
+        assert "| filelock | 4.0.4 | CVE-2026-112940 | 4.2.1 |" in section
+        assert "**Reproduce**: `uv run pip-audit`" in section
+        assert "<details" not in section
+
+    def test_should_not_open_a_section_for_passing_analyses(self) -> None:
+        report = render(all_ok_fragments(), {}, baseline=NO_BASELINE)
+
+        assert "### " not in report
+
+    def test_should_fence_raw_output_and_keep_the_fence_closed(self) -> None:
         fragments = all_ok_fragments()
         fragments[Analysis.MYPY] = fragment(Analysis.MYPY, "```\nevil", 1)
 
-        assert "```\nevil" not in render(fragments, {})
+        report = render(fragments, {}, baseline=NO_BASELINE)
 
-    def test_should_add_footer(self) -> None:
-        assert render(all_ok_fragments(), {}, "commit `abc`").endswith("---\ncommit `abc`\n")
+        assert "```text\n'''\nevil\n```" in report
+        assert "**Reproduce**: `uv run mypy app tests`" in report
+
+    def test_should_truncate_long_output(self) -> None:
+        fragments = all_ok_fragments()
+        fragments[Analysis.MYPY] = fragment(Analysis.MYPY, "x" * 20000, 1)
+
+        report = render(fragments, {}, baseline=NO_BASELINE)
+
+        assert "[...truncated...]" in report
+        assert len(report) < 30000
+
+    def test_should_name_the_failing_analysis_inside_a_multi_analysis_check(self) -> None:
+        fragments = all_ok_fragments()
+        fragments[Analysis.RUFF_FORMAT] = fragment(Analysis.RUFF_FORMAT, "Would reformat: a.py", 1)
+
+        report = render(fragments, {}, baseline=NO_BASELINE)
+
+        assert "### ❌ Lint and format (ruff)" in report
+        assert "**ruff-format**: 1 file to format (`make format-code`)" in report
+        assert "**ruff-check**" not in report
+        assert "**Reproduce**: `make check-code`" in report
+
+    def test_should_label_an_inherited_failure(self) -> None:
+        fragments = all_ok_fragments()
+        fragments[Analysis.PIP_AUDIT] = failing_pip_audit()
+
+        report = render(fragments, {}, baseline=Baseline("main", dict(fragments)))
+
+        assert "3 vulnerabilities in 2 packages · inherited from `main`\n" in report
+
+    def test_should_list_failures_before_warnings(self) -> None:
+        fragments = all_ok_fragments()
+        fragments[Analysis.VULTURE] = Fragment(Analysis.VULTURE, 3, "app/a.py:1: x", True)
+        fragments[Analysis.IMPORT_LINTER] = fragment(
+            Analysis.IMPORT_LINTER, IMPORT_LINTER_BROKEN, 1
+        )
+
+        report = render(fragments, {}, baseline=NO_BASELINE)
+
+        assert report.index("### ❌ Architecture contracts") < report.index("### ⚠️ Dead code")
+
+    def test_should_report_a_job_that_produced_no_result(self) -> None:
+        fragments = all_ok_fragments()
+        del fragments[Analysis.MYPY]
+
+        report = render(fragments, {"types": "failure"}, baseline=NO_BASELINE)
+
+        assert "### ❌ Types (mypy)" in report
+        assert "job `types` ended as `failure` without producing a result" in report
+
+
+class TestTable:
+    def test_should_group_the_checks_by_area_in_order(self) -> None:
+        report = render(all_ok_fragments(), {}, baseline=NO_BASELINE)
+
+        rows = [line for line in report.splitlines() if line.startswith("| ")][2:]
+        areas = [row.split(" | ")[0].removeprefix("| ") for row in rows]
+        assert [area for area in areas if area.strip()] == [
+            "**Code**",
+            "**Security and dependencies**",
+            "**Behavior**",
+            "**Architecture**",
+        ]
+        assert len(rows) == len(quality_report.SECTIONS)
+
+    def test_should_keep_every_check_of_an_area_together(self) -> None:
+        groups = [section.group for section in quality_report.SECTIONS]
+
+        assert groups == sorted(groups, key=list(quality_report.Group).index)
+
+    def test_should_show_a_one_line_detail_per_check(self) -> None:
+        report = render(all_ok_fragments(), {}, baseline=NO_BASELINE)
+
+        assert "|  | Types (mypy) | ✅ | 0 files |" in report
+        assert (
+            "| **Behavior** | Tests and coverage (pytest) | ✅ | 34 tests · coverage 100.00% (n/a) |"
+            in report
+        )
+        assert (
+            "| **Architecture** | Architecture contracts (import-linter) | ✅ | 2 contracts kept |"
+            in report
+        )
+        assert (
+            "|  | API contract (schemathesis) | ✅ | 54 cases on 3 operations · seed 1 |" in report
+        )
+
+    def test_should_show_the_reason_next_to_a_skipped_check(self) -> None:
+        fragments = all_ok_fragments()
+        fragments[Analysis.MUTATION] = fragment(
+            Analysis.MUTATION, mutation_output(100.0, [], skipped=True)
+        )
+        del fragments[Analysis.SMOKE]
+
+        report = render(fragments, {"smoke": "cancelled"}, baseline=NO_BASELINE)
+
+        assert "| Mutation testing (mutmut) | ⏭️ | no domain file changed |" in report
+        assert "| Boot smoke (/health, /ready) | ⏭️ | job `smoke` cancelled |" in report
+
+    def test_should_show_the_variation_against_the_base(self) -> None:
+        base = all_ok_fragments()
+        base[Analysis.PYTEST] = fragment(Analysis.PYTEST, pytest_with_coverage("97.30"))
+        current = all_ok_fragments()
+        current[Analysis.PYTEST] = fragment(Analysis.PYTEST, pytest_with_coverage("95.20"))
+
+        report = render(current, {}, baseline=Baseline("main", base))
+
+        assert "34 tests · coverage 95.20% (↓2.10) |" in report
+        assert "baseline matched · suppressions 1 (=) |" in report
+        assert "9 of 10 mutants killed (threshold 90.0%) · score 100.0% (=) |" in report
+
+    def test_should_label_an_inherited_failure_in_the_table(self) -> None:
+        fragments = all_ok_fragments()
+        fragments[Analysis.PIP_AUDIT] = failing_pip_audit()
+
+        report = render(fragments, {}, baseline=Baseline("main", dict(fragments)))
+
+        assert "| ❌ | 3 vulnerabilities in 2 packages · inherited from `main` |" in report
+
+    def test_should_escape_pipes_in_the_detail(self) -> None:
+        fragments = all_ok_fragments()
+        fragments[Analysis.SMOKE] = fragment(Analysis.SMOKE, ">> smoke: a | b", 1)
+
+        report = render(fragments, {}, baseline=NO_BASELINE)
+
+        assert "API did not start: a \\| b" in report
+
+
+class TestMissingBaseline:
+    def test_should_render_without_a_base(self) -> None:
+        report = render(all_ok_fragments(), {}, baseline=NO_BASELINE)
+
+        assert "coverage 100.00% (n/a)" in report
+        assert "inherited" not in report
+        assert report.endswith("<sub>no `main` baseline: deltas are n/a</sub>\n")
+
+    def test_should_not_mark_a_failure_as_inherited_when_the_base_passed(self) -> None:
+        fragments = all_ok_fragments()
+        baseline = Baseline("main", dict(fragments))
+        fragments[Analysis.PIP_AUDIT] = failing_pip_audit()
+
+        report = render(fragments, {}, baseline=baseline)
+
+        assert "inherited" not in report
+
+    def test_should_not_mark_a_failure_as_inherited_when_the_base_lacks_the_analysis(
+        self,
+    ) -> None:
+        fragments = all_ok_fragments()
+        fragments[Analysis.PIP_AUDIT] = failing_pip_audit()
+        baseline = Baseline("main", {Analysis.MYPY: fragments[Analysis.MYPY]})
+
+        report = render(fragments, {}, baseline=baseline)
+
+        assert "inherited" not in report
+        assert "coverage 100.00% (n/a)" in report
+
+    def test_should_ignore_a_base_fragment_it_cannot_parse(self) -> None:
+        broken = fragment(Analysis.MUTATION, quality_report.MUTATION_RESULT_PREFIX + "{bad", 0)
+        baseline = Baseline("main", {Analysis.MUTATION: broken})
+
+        report = render(all_ok_fragments(), {}, baseline=baseline)
+
+        assert "score 100.0% (n/a)" in report
+
+    def test_should_load_the_baseline_from_a_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+        monkeypatch.setenv("QUALITY_REPORT_BASE_RUN_ID", "7")
+        fragment(Analysis.MYPY, "ok").write(tmp_path)
+
+        baseline = quality_report.load_baseline(tmp_path, "main")
+
+        assert list(baseline.fragments) == [Analysis.MYPY]
+        assert baseline.run_url == "https://github.com/o/r/actions/runs/7"
+
+    def test_should_treat_a_missing_directory_as_no_baseline(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("QUALITY_REPORT_BASE_RUN_ID", raising=False)
+
+        assert not quality_report.load_baseline(tmp_path / "missing", "main").is_available
+        assert not quality_report.load_baseline(None, "main").is_available
+
+
+class TestPassedDetails:
+    def test_should_group_passing_details_in_a_single_closed_block(self) -> None:
+        report = render(all_ok_fragments(), {}, baseline=NO_BASELINE)
+
+        assert report.count("<details>") == 1
+        assert "<details><summary>14 passed</summary>" in report
+        assert "**Tests and coverage (pytest)** · Coverage" in report
+        assert "**Architecture contracts (import-linter)** · Contracts" in report
+        assert "**Suppressions (ratchet)** · By kind" in report
+
+    def test_should_leave_failed_details_out_of_the_passed_block(self) -> None:
+        fragments = all_ok_fragments()
+        fragments[Analysis.IMPORT_LINTER] = fragment(
+            Analysis.IMPORT_LINTER, IMPORT_LINTER_BROKEN, 1
+        )
+
+        report = render(fragments, {}, baseline=NO_BASELINE)
+
+        passed = report[report.index("<details><summary>13 passed") :]
+        assert "Architecture contracts" not in passed
+
+    def test_should_omit_the_block_when_no_passing_check_has_details(self) -> None:
+        fragments = {analysis: fragment(analysis) for analysis in Analysis}
+        fragments[Analysis.MUTATION] = fragment(
+            Analysis.MUTATION, mutation_output(100.0, [], skipped=True)
+        )
+        fragments[Analysis.SUPPRESSIONS] = fragment(Analysis.SUPPRESSIONS, "x", 1)
+
+        report = render(fragments, {}, baseline=NO_BASELINE)
+
+        assert "passed</summary>" not in report
+
+
+class TestFooter:
+    def test_should_build_the_footer_from_the_github_environment(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+        monkeypatch.setenv("GITHUB_RUN_ID", "42")
+        monkeypatch.setenv("GITHUB_SHA", "abcdef0123")
+        monkeypatch.delenv("QUALITY_REPORT_SHA", raising=False)
+
+        footer = quality_report.footer_from_environment(NOW)
+
+        assert footer == (
+            "commit `abcdef0` · 2026-11-13 14:05 UTC · "
+            "[workflow run](https://github.com/o/r/actions/runs/42)"
+        )
+
+    def test_should_prefer_the_pull_request_head_sha(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GITHUB_SHA", "merge000000")
+        monkeypatch.setenv("QUALITY_REPORT_SHA", "head1234567")
+
+        assert quality_report.footer_from_environment(NOW).startswith("commit `head123`")
+
+    def test_should_keep_only_the_time_outside_github(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for variable in ("GITHUB_REPOSITORY", "GITHUB_RUN_ID", "GITHUB_SHA", "QUALITY_REPORT_SHA"):
+            monkeypatch.delenv(variable, raising=False)
+
+        assert quality_report.footer_from_environment(NOW) == "2026-11-13 14:05 UTC"
+
+    def test_should_end_the_report_with_the_footer_and_the_baseline_run(self) -> None:
+        baseline = Baseline("main", all_ok_fragments(), "https://ci/runs/7")
+
+        report = render(all_ok_fragments(), {}, baseline=baseline, footer="commit `abc`")
+
+        assert report.endswith(
+            "---\n<sub>commit `abc` · compared with the [last `main` run](https://ci/runs/7)</sub>\n"
+        )
+
+    def test_should_mention_the_baseline_run_without_a_link(self) -> None:
+        report = render(all_ok_fragments(), {}, baseline=Baseline("main", all_ok_fragments()))
+
+        assert report.endswith("<sub>compared with the last `main` run</sub>\n")
 
 
 class TestRunCommand:
@@ -602,20 +1068,6 @@ class TestLoading:
         }
         assert quality_report.parse_job_results("") == {}
 
-    def test_should_build_footer_from_github_environment(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        for variable in ("GITHUB_REPOSITORY", "GITHUB_RUN_ID", "GITHUB_SHA", "QUALITY_REPORT_SHA"):
-            monkeypatch.delenv(variable, raising=False)
-        assert quality_report.footer_from_environment() == ""
-        monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
-        monkeypatch.setenv("GITHUB_RUN_ID", "42")
-        monkeypatch.setenv("GITHUB_SHA", "abcdef0123")
-
-        footer = quality_report.footer_from_environment()
-
-        assert footer == "commit `abcdef0` · [CI run](https://github.com/o/r/actions/runs/42)"
-
 
 class TestMain:
     def test_should_render_report_to_file(
@@ -629,7 +1081,32 @@ class TestMain:
         )
 
         assert quality_report.main() == 0
-        assert "No type errors (3 files)" in output.read_text()
+        report = output.read_text()
+        assert "|  | Types (mypy) | ✅ | 3 files |" in report
+        assert "no `main` baseline: deltas are n/a" in report
+
+    def test_should_compare_with_the_base_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        current, base = tmp_path / "current", tmp_path / "base"
+        failing_pip_audit().write(current)
+        failing_pip_audit().write(base)
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "quality_report",
+                "render",
+                "--dir",
+                str(current),
+                "--base-dir",
+                str(base),
+                "--base-name",
+                "develop",
+            ],
+        )
+
+        assert quality_report.main() == 0
+        assert "inherited from `develop`" in capsys.readouterr().out
 
     def test_should_propagate_command_exit_code(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

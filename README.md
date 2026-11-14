@@ -14,7 +14,7 @@ A production-ready starting point for Python 3.14 APIs with FastAPI: a layered f
 - **Layered structure**: domain, infra and presentation layers, with the domain isolated from frameworks through contracts.
 - **Quality tooling**: ruff (lint + format), mypy (types), bandit (security), vulture (dead code), xenon (complexity), import-linter (architecture contracts), deptry (declared dependencies) and pip-audit (vulnerable dependencies), all in [pre-commit](https://pre-commit.com/) hooks.
 - **Tests**: pytest with unit and integration suites and an 80% coverage gate.
-- **CI**: every pull request runs all checks and posts a single **Quality Report** comment with the result of every analysis (see [Quality Report](#quality-report)).
+- **CI**: every pull request runs all checks and posts a single **Quality Report** comment: the verdict, what to fix with the command to reproduce it, and every analysis grouped by area (see [Quality Report](#quality-report)).
 - **Dependabot**: weekly grouped updates for Python dependencies and GitHub Actions.
 - **Production basics**: typed settings ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)), JSON logs in production, configurable CORS, domain errors mapped to HTTP status codes and `/health` (liveness) and `/ready` (readiness) routes.
 - **Deterministic validation for AI-generated code**: a boot smoke test, API contract tests (Schemathesis), breaking-change detection on the OpenAPI schema (oasdiff), architecture contracts, mutation testing, a suppression ratchet and a required risk and deploy label on every PR (see [Validation layers](#validation-layers)).
@@ -137,7 +137,7 @@ The scope is `app/domain` (use cases and business rules, `[tool.mutmut]` in `pyp
 - **on every PR**, mutating only the domain files changed in the diff (`git diff origin/<base>...HEAD` filtered by `source_paths`/`do_not_mutate`). If the PR touches no domain file, the job ends in seconds with "No domain files changed". It fails when the score of the mutated files is below the minimum;
 - **weekly** (and on demand via `workflow_dispatch`) on the whole scope, as a safety net.
 
-Reading the run: the **Quality Report** comment has a *Mutation testing* section with the score, the threshold, killed/survived counts and the survivors (file and function). The job's **Summary** tab has the same data in more detail. It shows the score, killed vs survived counts and a table of the survivors with file, function and mutant name. Run `uv run mutmut show <mutant>` locally to see the diff.
+Reading the run: the **Quality Report** comment has a *Mutation testing* row with the killed mutants, the threshold and the score (with its variation against the base when there is one); when it fails, an open section lists the survivors (file and function). The job's **Summary** tab has the same data in more detail. It shows the score, killed vs survived counts and a table of the survivors with file, function and mutant name. Run `uv run mutmut show <mutant>` locally to see the diff.
 
 **Tuning.** The gate is the repository variable `MUTATION_MIN_SCORE` (Settings → Secrets and variables → Actions → Variables; default `90`, locally it is read from the environment). Set it to your project's baseline. The scope is `[tool.mutmut]` in `pyproject.toml` (`source_paths`, `do_not_mutate`); the PR job follows it automatically. Only changes to files in scope trigger mutation; test-only changes do not.
 
@@ -199,23 +199,34 @@ Create the labels once with `make labels` (idempotent: `gh label create --force`
 
 ## Quality Report
 
-Every pull request gets **one** comment (marker `<!-- quality-report -->`, updated in place on every push) with the verdict, a status table and a section per analysis: ✅ ok, ⚠️ warning, ❌ failed, ⏭️ not run (job cancelled/skipped, or nothing to do, e.g. no domain file changed for mutation testing). Long output goes inside collapsible `<details>`.
+Every pull request gets **one** comment (marker `<!-- quality-report -->`, updated in place on every push). The report only informs: each analysis job is still the gate, and nothing in the comment changes what blocks the merge. Top to bottom:
 
-| Section | Tool | Job | What the section shows |
-| --- | --- | --- | --- |
-| Lint/format | ruff check + format | `lint` | problem / file count; output on failure |
-| Types | mypy (strict) | `types` | files checked or error count |
-| Security | bandit + pip-audit | `security` | issues and vulnerable dependencies |
-| Dependencies | deptry | `dependencies` | dependency issues (undeclared imports, unused dependencies) |
-| Dead code | vulture | `dead-code` | items found (⚠️, advisory: does not block) |
-| Complexity | xenon | `complexity` | blocks above the threshold |
-| Suppressions | `scripts/suppressions.py` | `suppressions` | total vs. baseline; new or removed suppressions by file, kind and line |
-| Tests and coverage | pytest + coverage | `tests` | passed/failed/total, coverage vs. minimum |
-| Architecture | import-linter | `lint-imports` | contracts kept/broken; broken contract and violating import |
-| Boot smoke | `scripts/smoke.sh` | `smoke` | booted?, `/health` and `/ready`, time to healthy; API logs only on failure |
-| API contract | Schemathesis (`scripts/contract.sh`) | `contract` | test cases, operations and seed; on failure the failing checks, a `curl` per failure and the API logs |
-| Breaking API changes | oasdiff (`scripts/openapi.py`) | `openapi-diff` | breaking changes (❌), possible breaking changes (⚠️) and every API change with its endpoint |
-| Mutation testing | mutmut (`mutation.yml`) | `mutation` | score vs. threshold, killed/survivors, survivors by file/function |
+1. **Verdict**, one line in a GitHub alert: `[!CAUTION]` when something failed, `[!WARNING]` when only advisory warnings remain, `[!TIP]` when everything passed, with the counts (`❌ 1 failed · ✅ 12 passed · ⏭️ 1 skipped`). When every failure also fails on the base branch it says so (`1 failed, inherited from main`).
+2. **What to fix, open**: one section per failed (then warning) check, with the parsed problem (vulnerable packages as `package · version · CVE · fixed in` plus the `uv lock --upgrade-package` command, failed tests with their message, the broken import contract and the violating import, new suppressions by file and line, survivors by file and function, the failing API operations with a `curl`...) and the exact local command to reproduce it.
+3. **Status table** grouped by area, with a one-line detail per check (`191 tests · coverage 100.00% (=)`, `35 files`, `7 contracts kept`, `79 cases on 3 operations · seed 1`). A skipped check shows why (`no domain file changed`, ``job `smoke` cancelled``).
+4. **One closed `<details>`** ("N passed") with the extra detail of the passing checks (coverage per file, contracts, suppressions by kind, additive API changes). Passing checks get no section of their own.
+5. **Footer**: short commit sha, UTC time, a link to the workflow run and the base run used for the comparison.
+
+Statuses: ✅ passed, ⚠️ warning (advisory, does not block), ❌ failed, ⏭️ not run.
+
+| Area | Check | Tool | Job | Detail |
+| --- | --- | --- | --- | --- |
+| Code | Lint and format | ruff check + format | `lint` | files formatted; issues on failure |
+| | Types | mypy (strict) | `types` | files checked or error count |
+| | Dead code | vulture | `dead-code` | items found (⚠️, advisory) |
+| | Complexity | xenon | `complexity` | blocks above the threshold |
+| | Suppressions | `scripts/suppressions.py` | `suppressions` | total with the variation; new or stale suppressions by file, kind and line |
+| Security and dependencies | Code security | bandit | `security` | lines scanned or issues |
+| | Vulnerable dependencies | pip-audit | `security` | vulnerabilities and packages; table with the fixed version |
+| | Declared dependencies | deptry | `dependencies` | files scanned or dependency issues |
+| Behavior | Tests and coverage | pytest + coverage | `tests` | tests, coverage with the variation; failed tests |
+| | Boot smoke | `scripts/smoke.sh` | `smoke` | time to healthy; API logs only on failure |
+| | API contract | Schemathesis (`scripts/contract.sh`) | `contract` | cases, operations and seed; failing checks, a `curl` per failure and the API logs |
+| | Breaking API changes | oasdiff (`scripts/openapi.py`) | `openapi-diff` | breaking (❌), possible breaking (⚠️) and every API change |
+| | Mutation testing | mutmut (`mutation.yml`) | `mutation` | killed mutants, score with the variation; survivors |
+| Architecture | Architecture contracts | import-linter | `lint-imports` | contracts kept; broken contract and violating import |
+
+**Comparison with the base branch.** The `quality-report` job downloads the fragments of the last completed push run of `ci.yml` on the PR's base branch (`gh run list` + `gh run download`, `actions: read`), whether that run passed or failed. From them the report shows the variation of the stable numbers (coverage, suppression total and, when the base has one, the mutation score) as `100.00% (=)`, `91.2% (↓2.1)`, and labels a failed check **inherited from `main`** when the same analysis also failed there (same analysis failing, not necessarily the same findings). Mutation testing and oasdiff only run on PRs, so their base is normally missing. When there is no base (no completed run, artifacts past their 7-day retention, API error) the variation is `n/a`, nothing is marked inherited and the footer says so: the baseline never fails the report.
 
 **How it works.** Each analysis job runs its tool through `scripts/quality_report.py run <analysis> -- <command>`. The wrapper streams the output, returns the tool's own exit code (the job is still the gate; the report never decides what blocks) and saves a *fragment* `quality-fragments/<analysis>.json`, which the job uploads as the `quality-fragment-<job>` artifact. The final `quality-report` job (`needs` every analysis, `if: always()`, only on PRs, `pull-requests: write`) downloads the fragments, runs `scripts/quality_report.py render` and upserts the comment. A job that failed, was cancelled or produced no fragment appears as ❌ / ⏭️ instead of breaking the report. The report is also written to the job summary, which is the fallback for PRs from forks, where the token is read-only and posting the comment only emits a warning (this fork path is not validated by the PR that introduced it).
 
@@ -225,12 +236,12 @@ Coverage is part of the report: the separate coverage comment no longer exists o
 
 **Adding an analysis.**
 
-1. Add a value to `Analysis` and an `analyze_<tool>(fragment) -> Finding` function (status, one-line summary, optional details) in `scripts/quality_report.py`, register it in `ANALYZERS` and add a `Section` (title, job name, analyses) to `SECTIONS` in the order you want.
+1. Add a value to `Analysis` and an `analyze_<tool>(fragment) -> Finding` function (status, one-line summary for the table, optional details shown open on failure, optional `Metric` compared with the base) in `scripts/quality_report.py`, register it in `ANALYZERS` and add a `Section` (area `Group`, title, job name, analyses, command to reproduce locally) to `SECTIONS`, next to the checks of the same area.
 2. Create the job in `ci.yml` running the tool as `uv run --locked python scripts/quality_report.py run <analysis> -- <command>`, then upload `quality-fragments/` as the artifact `quality-fragment-<job>` with `if: ${{ !cancelled() }}`.
 3. Add the job to the `needs` of `quality-report`.
 4. Add tests with a sample of the tool's output.
 
-Render locally from fragments: `uv run python scripts/quality_report.py render --dir quality-fragments`.
+Render locally from fragments: `uv run python scripts/quality_report.py render --dir quality-fragments` (add `--base-dir <fragments of a base run> --base-name main` to see the comparison).
 
 ## Folder structure
 
